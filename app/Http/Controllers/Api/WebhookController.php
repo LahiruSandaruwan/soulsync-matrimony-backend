@@ -251,9 +251,23 @@ class WebhookController extends Controller
      */
     private function verifyPayPalSignature(Request $request): bool
     {
-        // TODO: Implement PayPal webhook signature verification
-        // For now, just validate that required fields are present
-        return $request->has(['event_type', 'resource']);
+        try {
+            $paypalService = app(\App\Services\Payment\PayPalPaymentService::class);
+            $headers = $request->headers->all();
+            $payload = $request->getContent();
+            
+            // Convert header keys to uppercase format PayPal expects
+            $formattedHeaders = [];
+            foreach ($headers as $key => $value) {
+                $formattedKey = strtoupper(str_replace('-', '-', $key));
+                $formattedHeaders[$formattedKey] = is_array($value) ? $value[0] : $value;
+            }
+            
+            return $paypalService->verifyWebhookSignature($formattedHeaders, $payload);
+        } catch (\Exception $e) {
+            Log::error('PayPal signature verification error', ['error' => $e->getMessage()]);
+            return false;
+        }
     }
 
     /**
@@ -290,8 +304,22 @@ class WebhookController extends Controller
      */
     private function verifyWebXPaySignature(Request $request): bool
     {
-        // TODO: Implement WebXPay specific signature verification
-        return $request->has(['transaction_id', 'status']);
+        try {
+            $webxpayService = app(\App\Services\Payment\WebXPayPaymentService::class);
+            $headers = $request->headers->all();
+            $payload = $request->getContent();
+            
+            // Convert header keys to format WebXPay expects
+            $formattedHeaders = [];
+            foreach ($headers as $key => $value) {
+                $formattedHeaders[$key] = is_array($value) ? $value[0] : $value;
+            }
+            
+            return $webxpayService->verifyWebhookSignature($formattedHeaders, $payload);
+        } catch (\Exception $e) {
+            Log::error('WebXPay signature verification error', ['error' => $e->getMessage()]);
+            return false;
+        }
     }
 
     /**

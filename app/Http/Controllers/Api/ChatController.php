@@ -290,11 +290,15 @@ class ChatController extends Controller
                 'last_message_at' => now(),
             ]);
 
-            // TODO: Broadcast real-time event using Pusher
-            // broadcast(new MessageSent($message))->toOthers();
+            // Broadcast real-time event using Pusher
+            $otherUser = $conversation->user1_id === $user->id ? 
+                $conversation->user2 : $conversation->user1;
+            
+            broadcast(new \App\Events\MessageSent($message, $user, $otherUser))->toOthers();
 
-            // TODO: Send push notification to other user
-            // $this->sendPushNotification($otherUser, $message);
+            // Send push notification to other user
+            $pushService = app(\App\Services\PushNotificationService::class);
+            $pushService->sendMessageNotification($otherUser, $user, $message->content);
 
             return response()->json([
                 'success' => true,

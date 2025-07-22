@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'premium' => \App\Http\Middleware\PremiumMiddleware::class,
+            'rate.limit' => \App\Http\Middleware\RateLimitMiddleware::class,
+            'auth.rate.limit' => \App\Http\Middleware\AuthRateLimitMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

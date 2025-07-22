@@ -5,26 +5,31 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserMatch;
-use App\Models\UserPreference;
-use App\Models\Conversation;
+use App\Services\MatchingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 class MatchController extends Controller
 {
+    protected MatchingService $matchingService;
+
+    public function __construct(MatchingService $matchingService)
+    {
+        $this->matchingService = $matchingService;
+    }
+
     /**
-     * Get user's mutual matches
+     * Get matches for the authenticated user
      */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
 
         $validator = Validator::make($request->all(), [
-            'page' => 'sometimes|integer|min:1',
+            'type' => 'sometimes|in:daily,suggestions,mutual,premium',
             'limit' => 'sometimes|integer|min:1|max:50',
+            'page' => 'sometimes|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -36,58 +41,35 @@ class MatchController extends Controller
         }
 
         try {
-            $limit = $request->get('limit', 20);
-            $page = $request->get('page', 1);
-            $offset = ($page - 1) * $limit;
+            $type = $request->get('type', 'suggestions');
+            $limit = $request->get('limit', 10);
 
-            // Get mutual matches
-            $matchIds = UserMatch::where('user_id', $user->id)
-                ->where('action', 'like')
-                ->whereNotNull('matched_at')
-                ->pluck('target_user_id');
+            $matches = match($type) {
+                'daily' => $this->matchingService->generateDailyMatches($user, $limit),
+                'mutual' => $this->matchingService->getMutualMatches($user),
+                'premium' => $this->matchingService->getPremiumSuggestions($user, $limit),
+                default => $this->matchingService->findMatches($user, $limit)
+            };
 
-            $matches = User::whereIn('id', $matchIds)
-                ->with(['profile', 'profilePicture'])
-                ->where('status', 'active')
-                ->where('profile_status', 'approved')
-                ->orderBy('last_active_at', 'desc')
-                ->offset($offset)
-                ->limit($limit)
-                ->get()
-                ->map(function ($matchUser) use ($user) {
-                    $matchRecord = UserMatch::where('user_id', $user->id)
-                        ->where('target_user_id', $matchUser->id)
-                        ->first();
-
-                    return [
-                        'id' => $matchUser->id,
-                        'first_name' => $matchUser->first_name,
-                        'age' => $matchUser->age,
-                        'location' => $matchUser->profile ? 
-                            ($matchUser->profile->city . ', ' . $matchUser->profile->country) : null,
-                        'occupation' => $matchUser->profile->occupation ?? null,
-                        'profile_picture' => $matchUser->profilePicture ? 
-                            Storage::url($matchUser->profilePicture->file_path) : null,
-                        'compatibility_score' => $matchRecord->compatibility_score ?? 0,
-                        'matched_at' => $matchRecord->matched_at,
-                        'last_active' => $matchUser->last_active_at,
-                    ];
-                });
-
-            $totalMatches = UserMatch::where('user_id', $user->id)
-                ->where('action', 'like')
-                ->whereNotNull('matched_at')
-                ->count();
+            // Format matches for API response
+            $formattedMatches = $matches->map(function ($match) use ($user) {
+                if ($match instanceof UserMatch) {
+                    // This is a mutual match
+                    $targetUser = $match->user_id === $user->id ? $match->matchedUser : $match->user;
+                    return $this->formatMatchUser($targetUser, $match);
+                } else {
+                    // This is a potential match
+                    return $this->formatPotentialMatch($match);
+                }
+            });
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'matches' => $matches,
-                    'pagination' => [
-                        'current_page' => $page,
-                        'total_matches' => $totalMatches,
-                        'has_more' => ($offset + $limit) < $totalMatches,
-                    ]
+                    'matches' => $formattedMatches,
+                    'total' => $formattedMatches->count(),
+                    'type' => $type,
+                    'has_more' => $formattedMatches->count() >= $limit,
                 ]
             ]);
 
@@ -101,71 +83,47 @@ class MatchController extends Controller
     }
 
     /**
-     * Get daily match suggestions
+     * Get daily matches
      */
     public function dailyMatches(Request $request): JsonResponse
     {
-        $user = $request->user()->load(['preferences', 'profile']);
+        $user = $request->user();
         
-        // Check if user has set preferences
-        if (!$user->preferences) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Please set your partner preferences first',
-                'redirect_to' => '/preferences'
-            ], 400);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'limit' => 'sometimes|integer|min:1|max:50',
-            'refresh' => 'sometimes|boolean',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            $limit = $request->get('limit', 10);
-            $refresh = $request->get('refresh', false);
-
-            // Get matches (either fresh or cached)
-            $matches = $this->generateMatches($user, $limit, $refresh);
+            $matches = $this->matchingService->generateDailyMatches($user, 10);
+            
+            $formattedMatches = $matches->map(function ($match) {
+                return $this->formatPotentialMatch($match);
+            });
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'matches' => $matches,
-                    'total_matches' => count($matches),
-                    'daily_limit' => $user->is_premium_active ? 50 : 10,
-                    'remaining_likes' => $this->getRemainingLikes($user),
-                    'generated_at' => now()->toISOString(),
+                    'daily_matches' => $formattedMatches,
+                    'date' => now()->format('Y-m-d'),
+                    'refresh_time' => now()->addDay()->startOfDay()->toISOString(),
                 ]
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to generate matches',
+                'message' => 'Failed to get daily matches',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Get match suggestions based on AI
+     * Get match suggestions
      */
     public function suggestions(Request $request): JsonResponse
     {
-        $user = $request->user()->load(['preferences', 'profile']);
-
+        $user = $request->user();
+        
         $validator = Validator::make($request->all(), [
-            'algorithm' => 'sometimes|in:ai,compatibility,recent,premium',
-            'limit' => 'sometimes|integer|min:1|max:20',
+            'limit' => 'sometimes|integer|min:1|max:50',
+            'min_score' => 'sometimes|numeric|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -177,259 +135,152 @@ class MatchController extends Controller
         }
 
         try {
-            $algorithm = $request->get('algorithm', 'ai');
-            $limit = $request->get('limit', 10);
+            $limit = $request->get('limit', 20);
+            $minScore = $request->get('min_score', 50);
+            
+            $matches = $this->matchingService->findMatches($user, $limit);
+            
+            // Filter by minimum score if specified
+            $filteredMatches = $matches->filter(function ($match) use ($minScore) {
+                return $match->compatibility_score >= $minScore;
+            });
 
-            $suggestions = $this->generateSuggestions($user, $algorithm, $limit);
+            $formattedMatches = $filteredMatches->map(function ($match) {
+                return $this->formatPotentialMatch($match);
+            });
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'suggestions' => $suggestions,
-                    'algorithm_used' => $algorithm,
-                    'total_suggestions' => count($suggestions),
+                    'suggestions' => $formattedMatches,
+                    'total' => $formattedMatches->count(),
+                    'min_score' => $minScore,
                 ]
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to generate suggestions',
+                'message' => 'Failed to get suggestions',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Like a user profile
+     * Like a user
      */
     public function like(Request $request, User $targetUser): JsonResponse
     {
         $user = $request->user();
 
-        $validator = Validator::make($request->all(), [
-            'message' => 'sometimes|string|max:500',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Check if user is trying to like themselves
+        // Validate user can like
         if ($user->id === $targetUser->id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot like your own profile'
+                'message' => 'You cannot like yourself'
             ], 400);
         }
 
-        // Check daily like limit
-        if (!$this->canLikeMore($user)) {
-            $limit = $user->is_premium_active ? 100 : 20;
+        if ($targetUser->status !== 'active' || $targetUser->profile_status !== 'approved') {
             return response()->json([
                 'success' => false,
-                'message' => "Daily like limit reached ({$limit} likes per day)",
-                'upgrade_required' => !$user->is_premium_active
-            ], 400);
+                'message' => 'User profile not available'
+            ], 404);
         }
 
         try {
-            // Check if match already exists
-            $existingMatch = UserMatch::where(function ($query) use ($user, $targetUser) {
-                $query->where('user_id', $user->id)->where('target_user_id', $targetUser->id);
-            })->orWhere(function ($query) use ($user, $targetUser) {
-                $query->where('user_id', $targetUser->id)->where('target_user_id', $user->id);
-            })->first();
-
-            if ($existingMatch) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Already interacted with this profile'
-                ], 400);
-            }
-
-            // Create the like
-            $match = UserMatch::create([
-                'user_id' => $user->id,
-                'target_user_id' => $targetUser->id,
-                'action' => 'like',
-                'message' => $request->get('message'),
-                'compatibility_score' => $this->calculateCompatibilityScore($user, $targetUser),
-                'matched_at' => null, // Will be set if it's a mutual like
-            ]);
-
-            // Check if target user has already liked this user (mutual like)
-            $mutualLike = UserMatch::where('user_id', $targetUser->id)
-                ->where('target_user_id', $user->id)
-                ->where('action', 'like')
-                ->first();
-
-            $isMatch = false;
-            if ($mutualLike) {
-                // It's a match! Update both records
-                $match->update(['matched_at' => now()]);
-                $mutualLike->update(['matched_at' => now()]);
-                $isMatch = true;
-
-                // Create conversation for matched users
-                $this->createConversation($user->id, $targetUser->id);
-
-                // Send notification to target user about the match
-                // Notification logic would go here
-            }
+            $result = $this->matchingService->processLike($user, $targetUser, false);
 
             return response()->json([
-                'success' => true,
-                'message' => $isMatch ? 'It\'s a match! 🎉' : 'Profile liked successfully',
+                'success' => $result['success'],
+                'message' => $result['message'],
                 'data' => [
-                    'is_match' => $isMatch,
-                    'match_id' => $match->id,
-                    'can_chat' => $isMatch,
-                    'remaining_likes' => $this->getRemainingLikes($user),
+                    'is_match' => $result['is_match'],
+                    'match_id' => $result['match_id'] ?? null,
+                    'conversation_id' => $result['conversation_id'] ?? null,
                 ]
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to like profile',
+                'message' => 'Failed to process like',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Super like a user profile (premium feature)
+     * Super like a user
      */
     public function superLike(Request $request, User $targetUser): JsonResponse
     {
         $user = $request->user();
 
-        if (!$user->is_premium_active) {
+        // Check if user has super likes remaining
+        if (!$this->canSuperLike($user)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Super likes are available for premium members only',
+                'message' => 'No super likes remaining. Upgrade to premium for more super likes.',
                 'upgrade_required' => true
             ], 403);
         }
 
-        $validator = Validator::make($request->all(), [
-            'message' => 'sometimes|string|max:500',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            // Check daily super like limit (premium users get 5 per day)
-            $todaySuperLikes = UserMatch::where('user_id', $user->id)
-                ->where('action', 'super_like')
-                ->whereDate('created_at', today())
-                ->count();
+            $result = $this->matchingService->processLike($user, $targetUser, true);
 
-            if ($todaySuperLikes >= 5) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Daily super like limit reached (5 super likes per day)'
-                ], 400);
-            }
-
-            // Create the super like
-            $match = UserMatch::create([
-                'user_id' => $user->id,
-                'target_user_id' => $targetUser->id,
-                'action' => 'super_like',
-                'message' => $request->get('message'),
-                'compatibility_score' => $this->calculateCompatibilityScore($user, $targetUser),
-            ]);
-
-            // Send notification to target user about super like
-            // This gives higher priority than regular likes
+            // Decrement super likes count
+            $user->decrement('super_likes_count');
 
             return response()->json([
-                'success' => true,
-                'message' => 'Super like sent successfully! ⭐',
+                'success' => $result['success'],
+                'message' => $result['message'],
                 'data' => [
-                    'match_id' => $match->id,
-                    'remaining_super_likes' => 5 - $todaySuperLikes - 1,
+                    'is_match' => $result['is_match'],
+                    'match_id' => $result['match_id'] ?? null,
+                    'conversation_id' => $result['conversation_id'] ?? null,
+                    'super_likes_remaining' => $this->getSuperLikesRemaining($user),
                 ]
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send super like',
+                'message' => 'Failed to process super like',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Dislike/pass a user profile
+     * Dislike/pass a user
      */
     public function dislike(Request $request, User $targetUser): JsonResponse
     {
         $user = $request->user();
 
-        $validator = Validator::make($request->all(), [
-            'reason' => 'sometimes|string|max:255',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        if ($user->id === $targetUser->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot dislike your own profile'
-            ], 400);
-        }
-
         try {
-            // Check if already interacted
-            $existingMatch = UserMatch::where('user_id', $user->id)
-                ->where('target_user_id', $targetUser->id)
-                ->first();
-
-            if ($existingMatch) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Already interacted with this profile'
-                ], 400);
-            }
-
-            // Create the dislike record
-            UserMatch::create([
+            // Find or create match record
+            $match = UserMatch::firstOrCreate([
                 'user_id' => $user->id,
-                'target_user_id' => $targetUser->id,
-                'action' => 'dislike',
-                'reason' => $request->get('reason'),
-                'compatibility_score' => $this->calculateCompatibilityScore($user, $targetUser),
+                'matched_user_id' => $targetUser->id,
+            ], [
+                'match_type' => 'user_action',
+                'status' => 'pending',
             ]);
+
+            $match->dislike($user);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Profile passed'
+                'message' => 'User passed'
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to pass profile',
+                'message' => 'Failed to process dislike',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -455,25 +306,16 @@ class MatchController extends Controller
         }
 
         try {
-            // Create or update the block record
-            UserMatch::updateOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'target_user_id' => $targetUser->id
-                ],
-                [
-                    'action' => 'block',
-                    'reason' => $request->get('reason'),
-                    'matched_at' => null, // Remove match if it existed
-                ]
-            );
+            // Find or create match record
+            $match = UserMatch::firstOrCreate([
+                'user_id' => $user->id,
+                'matched_user_id' => $targetUser->id,
+            ], [
+                'match_type' => 'user_action',
+                'status' => 'pending',
+            ]);
 
-            // Remove any existing conversations
-            Conversation::where(function ($query) use ($user, $targetUser) {
-                $query->where('user1_id', $user->id)->where('user2_id', $targetUser->id);
-            })->orWhere(function ($query) use ($user, $targetUser) {
-                $query->where('user1_id', $targetUser->id)->where('user2_id', $user->id);
-            })->delete();
+            $match->block($user);
 
             return response()->json([
                 'success' => true,
@@ -490,84 +332,39 @@ class MatchController extends Controller
     }
 
     /**
-     * Get users who liked me
+     * Get users who liked me (premium feature)
      */
     public function whoLikedMe(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        $validator = Validator::make($request->all(), [
-            'page' => 'sometimes|integer|min:1',
-            'limit' => 'sometimes|integer|min:1|max:50',
-        ]);
-
-        if ($validator->fails()) {
+        if (!$user->is_premium) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
+                'message' => 'Premium subscription required to see who liked you',
+                'upgrade_required' => true
+            ], 403);
         }
 
         try {
-            $limit = $request->get('limit', 20);
-            $page = $request->get('page', 1);
-            $offset = ($page - 1) * $limit;
+            $matches = $this->matchingService->getWhoLikedMe($user);
 
-            // Get users who liked this user but haven't been responded to
-            $likerIds = UserMatch::where('target_user_id', $user->id)
-                ->whereIn('action', ['like', 'super_like'])
-                ->whereNull('matched_at') // Not mutual yet
-                ->whereNotExists(function ($query) use ($user) {
-                    $query->select(DB::raw(1))
-                          ->from('user_matches as um2')
-                          ->whereRaw('um2.user_id = ? AND um2.target_user_id = user_matches.user_id', [$user->id]);
-                })
-                ->orderBy('created_at', 'desc')
-                ->offset($offset)
-                ->limit($limit)
-                ->pluck('user_id');
-
-            $likers = User::whereIn('id', $likerIds)
-                ->with(['profile', 'profilePicture'])
-                ->where('status', 'active')
-                ->get()
-                ->map(function ($liker) use ($user) {
-                    $likeRecord = UserMatch::where('user_id', $liker->id)
-                        ->where('target_user_id', $user->id)
-                        ->first();
-
-                    return [
-                        'id' => $liker->id,
-                        'first_name' => $liker->first_name,
-                        'age' => $liker->age,
-                        'location' => $liker->profile ? 
-                            ($liker->profile->city . ', ' . $liker->profile->country) : null,
-                        'occupation' => $liker->profile->occupation ?? null,
-                        'profile_picture' => $liker->profilePicture ? 
-                            Storage::url($liker->profilePicture->file_path) : null,
-                        'is_super_like' => $likeRecord->action === 'super_like',
-                        'message' => $likeRecord->message,
-                        'liked_at' => $likeRecord->created_at,
-                        'compatibility_score' => $likeRecord->compatibility_score,
-                    ];
-                });
+            $formattedMatches = $matches->map(function ($match) {
+                return $this->formatMatchUser($match->user, $match);
+            });
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'likers' => $likers,
-                    'pagination' => [
-                        'current_page' => $page,
-                        'has_more' => count($likers) === $limit,
-                    ]
+                    'who_liked_me' => $formattedMatches,
+                    'total' => $formattedMatches->count(),
                 ]
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to get likes',
+                'message' => 'Failed to get who liked you',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -578,412 +375,138 @@ class MatchController extends Controller
      */
     public function mutualMatches(Request $request): JsonResponse
     {
-        // This is essentially the same as index() but with a different endpoint
-        return $this->index($request);
-    }
+        $user = $request->user();
 
-    /**
-     * Generate matches based on preferences and AI
-     */
-    private function generateMatches(User $user, int $limit, bool $refresh = false): array
-    {
-        $preferences = $user->preferences;
-        
-        // Get users that have already been liked or passed
-        $excludeUserIds = UserMatch::where('user_id', $user->id)
-            ->pluck('target_user_id')
-            ->toArray();
-        
-        // Add the current user to exclude list
-        $excludeUserIds[] = $user->id;
+        try {
+            $matches = $this->matchingService->getMutualMatches($user);
 
-        // Build query based on preferences
-        $query = User::query()
-            ->with(['profile', 'profilePicture', 'horoscope'])
-            ->where('status', 'active')
-            ->where('profile_status', 'approved')
-            ->whereNotIn('id', $excludeUserIds);
-
-        // Apply preference filters
-        if ($preferences->min_age && $preferences->max_age) {
-            $minBirthDate = now()->subYears($preferences->max_age);
-            $maxBirthDate = now()->subYears($preferences->min_age);
-            $query->whereBetween('date_of_birth', [$minBirthDate, $maxBirthDate]);
-        }
-
-        // Gender preference (opposite gender for matrimonial)
-        if ($user->gender === 'male') {
-            $query->where('gender', 'female');
-        } elseif ($user->gender === 'female') {
-            $query->where('gender', 'male');
-        }
-
-        // Apply location filters if specified
-        if ($preferences->preferred_countries && count($preferences->preferred_countries) > 0) {
-            $query->whereHas('profile', function ($q) use ($preferences) {
-                $q->whereIn('country', $preferences->preferred_countries);
+            $formattedMatches = $matches->map(function ($match) use ($user) {
+                $targetUser = $match->user_id === $user->id ? $match->matchedUser : $match->user;
+                return $this->formatMatchUser($targetUser, $match);
             });
-        }
 
-        // Apply religion filter if specified
-        if ($preferences->religions && count($preferences->religions) > 0 && !$preferences->religion_no_bar) {
-            $query->whereHas('profile', function ($q) use ($preferences) {
-                $q->whereIn('religion', $preferences->religions);
-            });
-        }
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'mutual_matches' => $formattedMatches,
+                    'total' => $formattedMatches->count(),
+                ]
+            ]);
 
-        // Apply height filter if specified
-        if ($preferences->min_height && $preferences->max_height) {
-            $query->whereHas('profile', function ($q) use ($preferences) {
-                $q->whereBetween('height', [$preferences->min_height, $preferences->max_height]);
-            });
-        }
-
-        // Apply marital status filter
-        if ($preferences->marital_status && count($preferences->marital_status) > 0) {
-            $query->whereHas('profile', function ($q) use ($preferences) {
-                $q->whereIn('marital_status', $preferences->marital_status);
-            });
-        }
-
-        // Get potential matches
-        $potentialMatches = $query->get();
-
-        // Calculate compatibility scores and sort
-        $scoredMatches = $potentialMatches->map(function ($potentialMatch) use ($user) {
-            $score = $this->calculateCompatibilityScore($user, $potentialMatch);
-            $potentialMatch->compatibility_score = $score;
-            return $potentialMatch;
-        })->sortByDesc('compatibility_score')->take($limit);
-
-        // Format response
-        return $scoredMatches->map(function ($match) {
-            return [
-                'id' => $match->id,
-                'first_name' => $match->first_name,
-                'age' => $match->age,
-                'location' => $match->profile ? 
-                    ($match->profile->city . ', ' . $match->profile->country) : null,
-                'occupation' => $match->profile->occupation ?? null,
-                'education' => $match->profile->education ?? null,
-                'religion' => $match->profile->religion ?? null,
-                'height' => $match->profile->height ?? null,
-                'bio' => $match->profile ? substr($match->profile->bio, 0, 150) . '...' : null,
-                'profile_picture' => $match->profilePicture ? 
-                    Storage::url($match->profilePicture->file_path) : null,
-                'compatibility_score' => $match->compatibility_score,
-                'is_premium' => $match->is_premium_active,
-                'last_active' => $match->last_active_at,
-            ];
-        })->values()->toArray();
-    }
-
-    /**
-     * Generate suggestions based on different algorithms
-     */
-    private function generateSuggestions(User $user, string $algorithm, int $limit): array
-    {
-        switch ($algorithm) {
-            case 'ai':
-                return $this->generateMatches($user, $limit);
-            case 'compatibility':
-                return $this->generateCompatibilityBasedSuggestions($user, $limit);
-            case 'recent':
-                return $this->generateRecentJoinedSuggestions($user, $limit);
-            case 'premium':
-                return $this->generatePremiumSuggestions($user, $limit);
-            default:
-                return $this->generateMatches($user, $limit);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get mutual matches',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
     /**
-     * Generate compatibility-based suggestions
+     * Get match statistics
      */
-    private function generateCompatibilityBasedSuggestions(User $user, int $limit): array
+    public function statistics(Request $request): JsonResponse
     {
-        // Similar to generateMatches but focuses purely on compatibility score
-        return $this->generateMatches($user, $limit);
+        $user = $request->user();
+
+        try {
+            $stats = $this->matchingService->getMatchStatistics($user);
+
+            return response()->json([
+                'success' => true,
+                'data' => $stats
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get statistics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
-     * Generate recent joined suggestions
+     * Format potential match for API response
      */
-    private function generateRecentJoinedSuggestions(User $user, int $limit): array
+    private function formatPotentialMatch(User $user): array
     {
-        $excludeUserIds = UserMatch::where('user_id', $user->id)
-            ->pluck('target_user_id')
-            ->toArray();
-        $excludeUserIds[] = $user->id;
+        $profile = $user->profile;
+        $photos = $user->photos()->where('status', 'approved')->orderBy('is_profile_picture', 'desc')->get();
 
-        $oppositeGender = $user->gender === 'male' ? 'female' : 'male';
-
-        $recentUsers = User::with(['profile', 'profilePicture'])
-            ->where('gender', $oppositeGender)
-            ->where('status', 'active')
-            ->where('profile_status', 'approved')
-            ->whereNotIn('id', $excludeUserIds)
-            ->where('created_at', '>', now()->subDays(30))
-            ->orderBy('created_at', 'desc')
-            ->limit($limit)
-            ->get();
-
-        return $recentUsers->map(function ($user) {
-            return [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'age' => $user->age,
-                'location' => $user->profile ? 
-                    ($user->profile->city . ', ' . $user->profile->country) : null,
-                'occupation' => $user->profile->occupation ?? null,
-                'profile_picture' => $user->profilePicture ? 
-                    Storage::url($user->profilePicture->file_path) : null,
-                'joined_at' => $user->created_at,
-                'is_premium' => $user->is_premium_active,
-            ];
-        })->toArray();
+        return [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'age' => $user->age,
+            'location' => $profile?->full_location,
+            'occupation' => $profile?->occupation,
+            'education' => $profile?->education_level,
+            'religion' => $profile?->religion,
+            'height' => $profile?->height_feet,
+            'photos' => $photos->map(function ($photo) {
+                return [
+                    'id' => $photo->id,
+                    'url' => asset('storage/' . $photo->file_path),
+                    'is_profile' => $photo->is_profile_picture,
+                ];
+            }),
+            'compatibility_score' => $user->compatibility_score ?? 0,
+            'match_factors' => $user->matching_factors ?? [],
+            'is_premium' => $user->is_premium,
+            'last_active' => $user->last_active_at?->diffForHumans(),
+            'profile_completion' => $user->profile_completion_percentage,
+        ];
     }
 
     /**
-     * Generate premium user suggestions
+     * Format match user for API response
      */
-    private function generatePremiumSuggestions(User $user, int $limit): array
+    private function formatMatchUser(User $user, UserMatch $match): array
     {
-        $excludeUserIds = UserMatch::where('user_id', $user->id)
-            ->pluck('target_user_id')
-            ->toArray();
-        $excludeUserIds[] = $user->id;
-
-        $oppositeGender = $user->gender === 'male' ? 'female' : 'male';
-
-        $premiumUsers = User::with(['profile', 'profilePicture'])
-            ->where('gender', $oppositeGender)
-            ->where('status', 'active')
-            ->where('profile_status', 'approved')
-            ->where('is_premium', true)
-            ->where('premium_expires_at', '>', now())
-            ->whereNotIn('id', $excludeUserIds)
-            ->orderBy('last_active_at', 'desc')
-            ->limit($limit)
-            ->get();
-
-        return $premiumUsers->map(function ($user) {
-            return [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'age' => $user->age,
-                'location' => $user->profile ? 
-                    ($user->profile->city . ', ' . $user->profile->country) : null,
-                'occupation' => $user->profile->occupation ?? null,
-                'profile_picture' => $user->profilePicture ? 
-                    Storage::url($user->profilePicture->file_path) : null,
-                'is_premium' => true,
-                'last_active' => $user->last_active_at,
-            ];
-        })->toArray();
-    }
-
-    /**
-     * Calculate compatibility score between two users
-     */
-    private function calculateCompatibilityScore(User $user1, User $user2): int
-    {
-        $score = 0;
-        $maxScore = 100;
+        $basicInfo = $this->formatPotentialMatch($user);
         
-        $user1Profile = $user1->profile;
-        $user2Profile = $user2->profile;
-        $preferences = $user1->preferences;
-
-        if (!$user1Profile || !$user2Profile || !$preferences) {
-            return 0;
-        }
-
-        // Age compatibility (20 points)
-        $ageScore = $this->calculateAgeCompatibility($user1, $user2, $preferences);
-        $score += $ageScore * 0.2;
-
-        // Location compatibility (15 points)
-        $locationScore = $this->calculateLocationCompatibility($user1Profile, $user2Profile, $preferences);
-        $score += $locationScore * 0.15;
-
-        // Cultural compatibility (25 points)
-        $culturalScore = $this->calculateCulturalCompatibility($user1Profile, $user2Profile, $preferences);
-        $score += $culturalScore * 0.25;
-
-        // Lifestyle compatibility (15 points)
-        $lifestyleScore = $this->calculateLifestyleCompatibility($user1Profile, $user2Profile, $preferences);
-        $score += $lifestyleScore * 0.15;
-
-        // Education/Career compatibility (10 points)
-        $careerScore = $this->calculateCareerCompatibility($user1Profile, $user2Profile, $preferences);
-        $score += $careerScore * 0.1;
-
-        // Family compatibility (10 points)
-        $familyScore = $this->calculateFamilyCompatibility($user1Profile, $user2Profile, $preferences);
-        $score += $familyScore * 0.1;
-
-        // Physical compatibility (5 points)
-        $physicalScore = $this->calculatePhysicalCompatibility($user1Profile, $user2Profile, $preferences);
-        $score += $physicalScore * 0.05;
-
-        return min($maxScore, round($score));
-    }
-
-    /**
-     * Individual compatibility calculations
-     */
-    private function calculateAgeCompatibility(User $user1, User $user2, UserPreference $preferences): int
-    {
-        $age2 = $user2->age;
-        
-        if ($age2 >= $preferences->min_age && $age2 <= $preferences->max_age) {
-            return 100;
-        }
-        
-        // Partial score if close to range
-        $rangeMid = ($preferences->min_age + $preferences->max_age) / 2;
-        $distance = abs($age2 - $rangeMid);
-        return max(0, 100 - ($distance * 10));
-    }
-
-    private function calculateLocationCompatibility($profile1, $profile2, $preferences): int
-    {
-        if (!$preferences->preferred_countries || count($preferences->preferred_countries) === 0) {
-            return 100; // No preference set
-        }
-
-        if (in_array($profile2->country, $preferences->preferred_countries)) {
-            if ($profile1->city === $profile2->city) return 100;
-            if ($profile1->state === $profile2->state) return 80;
-            return 60;
-        }
-
-        return 20;
-    }
-
-    private function calculateCulturalCompatibility($profile1, $profile2, $preferences): int
-    {
-        $score = 0;
-        $factors = 0;
-
-        // Religion compatibility
-        if ($preferences->religion_no_bar) {
-            $score += 100;
-        } elseif ($preferences->religions && in_array($profile2->religion, $preferences->religions)) {
-            $score += 100;
-        } else {
-            $score += 30;
-        }
-        $factors++;
-
-        // Mother tongue
-        if ($preferences->mother_tongues && in_array($profile2->mother_tongue, $preferences->mother_tongues)) {
-            $score += 80;
-        } else {
-            $score += 40;
-        }
-        $factors++;
-
-        return $factors > 0 ? round($score / $factors) : 0;
-    }
-
-    private function calculateLifestyleCompatibility($profile1, $profile2, $preferences): int
-    {
-        $score = 70; // Base score
-
-        if ($preferences->diet_preferences && in_array($profile2->diet, $preferences->diet_preferences)) {
-            $score += 30;
-        }
-
-        return min(100, $score);
-    }
-
-    private function calculateCareerCompatibility($profile1, $profile2, $preferences): int
-    {
-        $score = 70; // Base score
-
-        if ($preferences->education_levels && in_array($profile2->education, $preferences->education_levels)) {
-            $score += 20;
-        }
-
-        if (!$preferences->income_no_bar && $preferences->min_income_usd) {
-            if ($profile2->annual_income_usd >= $preferences->min_income_usd) {
-                $score += 10;
-            }
-        }
-
-        return min(100, $score);
-    }
-
-    private function calculateFamilyCompatibility($profile1, $profile2, $preferences): int
-    {
-        $score = 70;
-
-        if ($preferences->family_types && in_array($profile2->family_type, $preferences->family_types)) {
-            $score += 20;
-        }
-
-        if ($preferences->children_acceptable && $profile2->children_count <= ($preferences->max_children_count ?? 10)) {
-            $score += 10;
-        }
-
-        return min(100, $score);
-    }
-
-    private function calculatePhysicalCompatibility($profile1, $profile2, $preferences): int
-    {
-        $score = 70;
-
-        if ($preferences->body_types && in_array($profile2->body_type, $preferences->body_types)) {
-            $score += 20;
-        }
-
-        if ($preferences->complexions && in_array($profile2->complexion, $preferences->complexions)) {
-            $score += 10;
-        }
-
-        return min(100, $score);
-    }
-
-    /**
-     * Check if user can like more profiles
-     */
-    private function canLikeMore(User $user): bool
-    {
-        $limit = $user->is_premium_active ? 100 : 20;
-        $todayLikes = UserMatch::where('user_id', $user->id)
-            ->where('action', 'like')
-            ->whereDate('created_at', today())
-            ->count();
-
-        return $todayLikes < $limit;
-    }
-
-    /**
-     * Get remaining likes for today
-     */
-    private function getRemainingLikes(User $user): int
-    {
-        $limit = $user->is_premium_active ? 100 : 20;
-        $todayLikes = UserMatch::where('user_id', $user->id)
-            ->where('action', 'like')
-            ->whereDate('created_at', today())
-            ->count();
-
-        return max(0, $limit - $todayLikes);
-    }
-
-    /**
-     * Create conversation between matched users
-     */
-    private function createConversation(int $userId1, int $userId2): void
-    {
-        Conversation::firstOrCreate([
-            'user1_id' => min($userId1, $userId2),
-            'user2_id' => max($userId1, $userId2),
-        ], [
-            'status' => 'active',
+        return array_merge($basicInfo, [
+            'match_id' => $match->id,
+            'match_status' => $match->status,
+            'can_communicate' => $match->can_communicate,
+            'conversation_id' => $match->conversation_id,
+            'matched_at' => $match->created_at->toISOString(),
+            'is_mutual' => $match->is_mutual,
         ]);
+    }
+
+    /**
+     * Check if user can super like
+     */
+    private function canSuperLike(User $user): bool
+    {
+        if ($user->is_premium) {
+            return true; // Premium users have unlimited super likes
+        }
+
+        // Free users get limited super likes (e.g., 1 per day)
+        $dailySuperLikes = UserMatch::where('user_id', $user->id)
+            ->where('user_action', 'super_liked')
+            ->whereDate('user_action_at', today())
+            ->count();
+
+        return $dailySuperLikes < 1;
+    }
+
+    /**
+     * Get remaining super likes for user
+     */
+    private function getSuperLikesRemaining(User $user): int|string
+    {
+        if ($user->is_premium) {
+            return 'unlimited';
+        }
+
+        $dailySuperLikes = UserMatch::where('user_id', $user->id)
+            ->where('user_action', 'super_liked')
+            ->whereDate('user_action_at', today())
+            ->count();
+
+        return max(0, 1 - $dailySuperLikes);
     }
 }

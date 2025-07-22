@@ -18,13 +18,13 @@ use App\Http\Controllers\Api\AuthController;
 // Public routes (no authentication required)
 Route::prefix('v1')->group(function () {
     
-    // Authentication routes
+    // Authentication routes with rate limiting
     Route::prefix('auth')->group(function () {
-        Route::post('register', [AuthController::class, 'register']);
-        Route::post('login', [AuthController::class, 'login']);
-        Route::post('social-login', [AuthController::class, 'socialLogin']);
-        Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
-        Route::post('reset-password', [AuthController::class, 'resetPassword']);
+        Route::post('register', [AuthController::class, 'register'])->middleware('auth.rate.limit:register');
+        Route::post('login', [AuthController::class, 'login'])->middleware('auth.rate.limit:login');
+        Route::post('social-login', [AuthController::class, 'socialLogin'])->middleware('auth.rate.limit:login');
+        Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('auth.rate.limit:forgot-password');
+        Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('auth.rate.limit:reset-password');
     });
     
     // Public data routes (for browsing without login)
@@ -79,7 +79,10 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         // Voice intro
         Route::prefix('voice')->group(function () {
             Route::post('/', 'Api\VoiceController@store');
+            Route::get('/', 'Api\VoiceController@show');
             Route::delete('/', 'Api\VoiceController@destroy');
+            Route::get('stream', 'Api\VoiceController@stream');
+            Route::put('settings', 'Api\VoiceController@updateSettings');
         });
     });
     
@@ -135,6 +138,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('{user}/report', 'Api\UserController@report');
         Route::get('{user}/photos', 'Api\UserController@photos');
         Route::post('{user}/request-photo-access', 'Api\UserController@requestPhotoAccess');
+        Route::get('{user}/voice', 'Api\VoiceController@getUserVoice');
+        Route::get('{user}/voice/stream', 'Api\VoiceController@streamUserVoice');
     });
     
     // Messaging and chat
@@ -176,6 +181,18 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::put('notifications', 'Api\SettingsController@updateNotifications');
         Route::post('deactivate', 'Api\SettingsController@deactivateAccount');
         Route::post('delete', 'Api\SettingsController@deleteAccount');
+        Route::get('stats', 'Api\SettingsController@getAccountStats');
+        Route::post('export-data', 'Api\SettingsController@exportData');
+    });
+
+    // Two-Factor Authentication
+    Route::prefix('2fa')->group(function () {
+        Route::get('status', 'Api\TwoFactorController@status');
+        Route::post('setup', 'Api\TwoFactorController@setup');
+        Route::post('verify-setup', 'Api\TwoFactorController@verifySetup');
+        Route::post('disable', 'Api\TwoFactorController@disable');
+        Route::post('recovery-codes', 'Api\TwoFactorController@generateRecoveryCodes');
+        Route::post('send-code', 'Api\TwoFactorController@sendCode');
     });
     
     // Interests
@@ -189,6 +206,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('profile-views', 'Api\InsightsController@profileViews');
         Route::get('match-analytics', 'Api\InsightsController@matchAnalytics');
         Route::get('compatibility-reports', 'Api\InsightsController@compatibilityReports');
+        Route::get('profile-optimization', 'Api\InsightsController@profileOptimization');
     });
 });
 

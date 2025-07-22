@@ -238,6 +238,18 @@ class UserController extends Controller
                     'user1_id' => min($currentUser->id, $user->id),
                     'user2_id' => max($currentUser->id, $user->id),
                 ], ['status' => 'active']);
+
+                // Broadcast match event
+                broadcast(new \App\Events\MatchFound($match, $currentUser, $user))->toOthers();
+
+                // Send push notifications
+                $pushService = app(\App\Services\PushNotificationService::class);
+                $pushService->sendMatchNotification($user, $currentUser);
+                $pushService->sendMatchNotification($currentUser, $user);
+            } else {
+                // Send like notification
+                $pushService = app(\App\Services\PushNotificationService::class);
+                $pushService->sendLikeNotification($user, $currentUser);
             }
 
             // Send notification

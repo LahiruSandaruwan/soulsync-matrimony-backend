@@ -56,9 +56,11 @@ class SettingsController extends Controller
                     'current_plan' => $user->activeSubscription?->plan_type ?? 'free',
                 ],
                 'security' => [
-                    'two_factor_enabled' => false, // TODO: Implement 2FA
+                    'two_factor_enabled' => $user->twoFactorAuth?->enabled ?? false,
+                    'two_factor_method' => $user->twoFactorAuth?->method ?? 'totp',
                     'login_notifications' => true,
-                    'last_password_change' => null, // TODO: Track password changes
+                    'last_password_change' => $user->last_password_change?->toDateString(),
+                    'password_expired' => $user->password_expired ?? false,
                 ],
             ];
 
@@ -325,7 +327,8 @@ class SettingsController extends Controller
                 'email_verified_at' => null, // Require re-verification
             ]);
 
-            // TODO: Send email verification
+            // Send email verification
+            $this->sendEmailVerification($user, $validatedData['email']);
             // $user->sendEmailVerificationNotification();
 
             return response()->json([
@@ -435,8 +438,8 @@ class SettingsController extends Controller
                 'ip_address' => $request->ip(),
             ];
 
-            // TODO: Store in separate deleted_accounts table
-            // \App\Models\DeletedAccount::create($deletionData);
+            // Store in deleted_accounts table for GDPR compliance
+            \App\Models\DeletedAccount::createFromUser($user, 'user', $request->get('reason'));
 
             // Soft delete or anonymize user data
             $user->update([
@@ -451,8 +454,8 @@ class SettingsController extends Controller
             // Revoke all tokens
             $user->tokens()->delete();
 
-            // TODO: Clean up related data (photos, messages, etc.)
-            // Or keep for data integrity and just mark as deleted
+            // Clean up related data while preserving integrity
+            $this->cleanupUserData($user);
 
             return response()->json([
                 'success' => true,
@@ -484,7 +487,7 @@ class SettingsController extends Controller
                     ->where('action', 'like')->count(),
                 'total_conversations' => $user->conversations()->count(),
                 'total_messages_sent' => $user->sentMessages()->count(),
-                'profile_views' => 0, // TODO: Implement profile views tracking
+                'profile_views' => $user->total_profile_views ?? 0,
                 'photos_count' => $user->photos()->count(),
                 'account_age_days' => $user->created_at->diffInDays(now()),
                 'last_active' => $user->last_active_at,
@@ -531,13 +534,21 @@ class SettingsController extends Controller
                 'notifications' => $user->notifications()->get(['type', 'title', 'created_at'])->toArray(),
             ];
 
-            // TODO: Generate downloadable file (JSON/CSV)
-            // For now, return JSON response
+            // Generate downloadable file based on format preference
+            $format = $request->get('format', 'json');
+            
+            if ($format === 'csv') {
+                return $this->generateCSVExport($userData, $user);
+            } elseif ($format === 'pdf') {
+                return $this->generatePDFExport($userData, $user);
+            }
 
+            // Default JSON response
             return response()->json([
                 'success' => true,
                 'message' => 'Data export generated successfully',
-                'data' => $userData
+                'data' => $userData,
+                'download_formats' => ['json', 'csv', 'pdf']
             ]);
 
         } catch (\Exception $e) {
@@ -547,6 +558,98 @@ class SettingsController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Clean up user data while preserving integrity
+     */
+    private function cleanupUserData($user): void
+    {
+        try {
+            // Anonymize photos but keep files for content integrity
+            $user->photos()->update([
+                'caption' => null,
+                'is_private' => true,
+                'is_verified' => false,
+            ]);
+
+            // Anonymize messages
+            $user->sentMessages()->update(['content' => '[Message deleted]']);
+            $user->receivedMessages()->update(['content' => '[Message deleted]']);
+
+            // Keep matches but anonymize actions
+            $user->matches()->update(['message' => null]);
+
+            // Cancel active subscriptions
+            $user->subscriptions()->where('status', 'active')->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancellation_note' => 'Account deleted'
+            ]);
+
+            // Disable 2FA
+            $user->twoFactorAuth?->disable();
+
+        } catch (\Exception $e) {
+            \Log::error('Error cleaning up user data', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Send email verification
+     */
+    private function sendEmailVerification($user, $newEmail): void
+    {
+        try {
+            // Generate verification code
+            $code = \App\Models\TwoFactorCode::generateFor($user, 'email_verification');
+            
+            // Send email verification using CommunicationService
+            $communicationService = app(\App\Services\CommunicationService::class);
+            $communicationService->sendVerificationEmail($newEmail, $code->code, 'email_verification');
+        } catch (\Exception $e) {
+            \Log::error('Failed to send email verification', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Generate CSV export
+     */
+    private function generateCSVExport($userData, $user)
+    {
+        $csv = "Name,Email,Registration Date,Total Matches,Total Messages,Total Photos\n";
+        $csv .= sprintf(
+            "%s,%s,%s,%d,%d,%d\n",
+            $user->first_name . ' ' . $user->last_name,
+            $user->email,
+            $user->created_at->toDateString(),
+            count($userData['matches']),
+            count($userData['messages']),
+            count($userData['photos'])
+        );
+
+        return response($csv)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', 'attachment; filename="soulsync_data_export.csv"');
+    }
+
+    /**
+     * Generate PDF export
+     */
+    private function generatePDFExport($userData, $user)
+    {
+        // For now, return JSON - in production, use a PDF library like TCPDF or DomPDF
+        return response()->json([
+            'success' => true,
+            'message' => 'PDF export not yet implemented',
+            'data' => $userData
+        ]);
     }
 
     /**

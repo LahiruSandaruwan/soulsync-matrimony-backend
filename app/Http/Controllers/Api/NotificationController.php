@@ -365,7 +365,9 @@ class NotificationController extends Controller
                 ]),
             ]);
 
-            // TODO: Send push notification if enabled
+            // Send push notification if enabled
+            $pushService = app(\App\Services\PushNotificationService::class);
+            $pushService->sendCustomNotification($user, $notification);
             // $this->sendPushNotification($user, $notification);
 
             return response()->json([

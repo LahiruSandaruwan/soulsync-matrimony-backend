@@ -203,16 +203,24 @@ class SearchController extends Controller
         }
 
         try {
-            // Save search logic would go here
-            // For now, return success
+            // Create saved search
+            $savedSearch = \App\Models\SavedSearch::create([
+                'user_id' => $user->id,
+                'name' => $request->name,
+                'filters' => $request->filters,
+                'is_alert_enabled' => $request->get('is_alert', false),
+                'alert_frequency' => $request->get('alert_frequency', 24),
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Search saved successfully',
                 'data' => [
-                    'search_id' => uniqid(),
-                    'name' => $request->name,
-                    'filters' => $request->filters,
-                    'is_alert' => $request->get('is_alert', false),
+                    'search_id' => $savedSearch->id,
+                    'name' => $savedSearch->name,
+                    'filters' => $savedSearch->filters,
+                    'is_alert_enabled' => $savedSearch->is_alert_enabled,
+                    'created_at' => $savedSearch->created_at->toISOString(),
                 ]
             ]);
 
@@ -233,12 +241,28 @@ class SearchController extends Controller
         $user = $request->user();
 
         try {
-            // For now, return empty array - this would be implemented with a SavedSearch model
+            $savedSearches = \App\Models\SavedSearch::where('user_id', $user->id)
+                ->where('is_active', true)
+                ->orderBy('last_executed', 'desc')
+                ->get();
+
+            $recentSearches = \App\Models\SavedSearch::getUserSearchHistory($user, 5);
+
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'saved_searches' => [],
-                    'recent_searches' => [],
+                    'saved_searches' => $savedSearches->map(function ($search) {
+                        return [
+                            'id' => $search->id,
+                            'name' => $search->name,
+                            'filters' => $search->filters,
+                            'result_count' => $search->result_count,
+                            'is_alert_enabled' => $search->is_alert_enabled,
+                            'last_executed' => $search->last_executed?->toISOString(),
+                            'created_at' => $search->created_at->toISOString(),
+                        ];
+                    }),
+                    'recent_searches' => $recentSearches,
                 ]
             ]);
 

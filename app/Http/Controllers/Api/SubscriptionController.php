@@ -545,50 +545,76 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Placeholder payment processing methods
+     * Payment processing methods using dedicated services
      */
     private function processStripePayment(array $pricing, string $token, User $user): array
     {
-        // TODO: Implement Stripe payment processing
-        return [
-            'success' => true,
-            'transaction_id' => 'stripe_' . uniqid(),
-            'amount' => $pricing['amount_local'],
-            'currency' => $pricing['currency'],
-        ];
+        $stripeService = new \App\Services\Payment\StripePaymentService();
+        
+        return $stripeService->processPayment($pricing, $token, $user, [
+            'plan_type' => request('plan_type'),
+            'duration_months' => request('duration_months', 1),
+        ]);
     }
 
     private function processPayPalPayment(array $pricing, string $token, User $user): array
     {
-        // TODO: Implement PayPal payment processing
-        return [
-            'success' => true,
-            'transaction_id' => 'paypal_' . uniqid(),
-            'amount' => $pricing['amount_local'],
-            'currency' => $pricing['currency'],
-        ];
+        $paypalService = app(\App\Services\Payment\PayPalPaymentService::class);
+        $planType = request('plan_type');
+        $amountUSD = $pricing['amount_usd'];
+        
+        $result = $paypalService->createSubscription($user, $planType, $amountUSD);
+        
+        if ($result['success']) {
+            return [
+                'success' => true,
+                'transaction_id' => $result['subscription_id'],
+                'amount' => $pricing['amount_usd'],
+                'currency' => 'USD',
+                'approval_url' => $result['approval_url'],
+                'paypal_response' => $result['paypal_response']
+            ];
+        } else {
+            return [
+                'success' => false,
+                'error' => $result['error']
+            ];
+        }
     }
 
     private function processPayHerePayment(array $pricing, string $token, User $user): array
     {
-        // TODO: Implement PayHere payment processing
-        return [
-            'success' => true,
-            'transaction_id' => 'payhere_' . uniqid(),
-            'amount' => $pricing['amount_local'],
-            'currency' => $pricing['currency'],
-        ];
+        $payHereService = new \App\Services\Payment\PayHerePaymentService();
+        
+        return $payHereService->processPayment($pricing, $token, $user, [
+            'plan_type' => request('plan_type'),
+            'duration_months' => request('duration_months', 1),
+        ]);
     }
 
     private function processWebXPayPayment(array $pricing, string $token, User $user): array
     {
-        // TODO: Implement WebXPay payment processing
-        return [
-            'success' => true,
-            'transaction_id' => 'webxpay_' . uniqid(),
-            'amount' => $pricing['amount_local'],
-            'currency' => $pricing['currency'],
-        ];
+        $webxpayService = app(\App\Services\Payment\WebXPayPaymentService::class);
+        $planType = request('plan_type');
+        $amountLKR = $pricing['amount_local'];
+        
+        $result = $webxpayService->createPayment($user, $planType, $amountLKR, $pricing['currency']);
+        
+        if ($result['success']) {
+            return [
+                'success' => true,
+                'transaction_id' => $result['transaction_id'],
+                'amount' => $pricing['amount_local'],
+                'currency' => $pricing['currency'],
+                'payment_url' => $result['payment_url'],
+                'webxpay_response' => $result['webxpay_response']
+            ];
+        } else {
+            return [
+                'success' => false,
+                'error' => $result['error']
+            ];
+        }
     }
 
     /**
@@ -596,7 +622,38 @@ class SubscriptionController extends Controller
      */
     private function verifyPaymentWithGateway(string $method, string $transactionId): bool
     {
-        // TODO: Implement actual payment verification
-        return true; // Placeholder
+        try {
+            switch ($method) {
+                case 'stripe':
+                    $stripeService = app(\App\Services\Payment\StripePaymentService::class);
+                    $result = $stripeService->verifyPayment($transactionId);
+                    return $result['success'] ?? false;
+
+                case 'paypal':
+                    $paypalService = app(\App\Services\Payment\PayPalPaymentService::class);
+                    $result = $paypalService->verifySubscription($transactionId);
+                    return $result['success'] ?? false;
+
+                case 'payhere':
+                    $payhereService = app(\App\Services\Payment\PayHerePaymentService::class);
+                    $result = $payhereService->verifyPayment($transactionId);
+                    return $result['success'] ?? false;
+
+                case 'webxpay':
+                    $webxpayService = app(\App\Services\Payment\WebXPayPaymentService::class);
+                    $result = $webxpayService->verifyPayment($transactionId);
+                    return $result['success'] ?? false;
+
+                default:
+                    return false;
+            }
+        } catch (\Exception $e) {
+            Log::error('Payment verification error', [
+                'method' => $method,
+                'transaction_id' => $transactionId,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
     }
 }
