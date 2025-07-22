@@ -78,18 +78,18 @@ class RolesAndPermissionsSeeder extends Seeder
         ];
 
         foreach ($permissions as $permission) {
-            Permission::create(['name' => $permission]);
+            Permission::firstOrCreate(['name' => $permission]);
         }
 
         // Create roles and assign permissions
 
         // Super Admin role
-        $superAdmin = Role::create(['name' => 'super-admin']);
-        $superAdmin->givePermissionTo(Permission::all());
+        $superAdmin = Role::firstOrCreate(['name' => 'super-admin']);
+        $superAdmin->syncPermissions(Permission::all());
 
         // Admin role
-        $admin = Role::create(['name' => 'admin']);
-        $admin->givePermissionTo([
+        $admin = Role::firstOrCreate(['name' => 'admin']);
+        $admin->syncPermissions([
             'admin dashboard',
             'manage users',
             'moderate photos',
@@ -108,8 +108,8 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
 
         // Moderator role
-        $moderator = Role::create(['name' => 'moderator']);
-        $moderator->givePermissionTo([
+        $moderator = Role::firstOrCreate(['name' => 'moderator']);
+        $moderator->syncPermissions([
             'admin dashboard',
             'moderate photos',
             'moderate profiles',
@@ -123,8 +123,8 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
 
         // Premium User role
-        $premiumUser = Role::create(['name' => 'premium-user']);
-        $premiumUser->givePermissionTo([
+        $premiumUser = Role::firstOrCreate(['name' => 'premium-user']);
+        $premiumUser->syncPermissions([
             // Basic user permissions
             'view profile',
             'edit profile',
@@ -158,8 +158,8 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
 
         // Basic User role
-        $user = Role::create(['name' => 'user']);
-        $user->givePermissionTo([
+        $user = Role::firstOrCreate(['name' => 'user']);
+        $user->syncPermissions([
             'view profile',
             'edit profile',
             'upload photos',
@@ -181,8 +181,8 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
 
         // Suspended User role (limited permissions)
-        $suspendedUser = Role::create(['name' => 'suspended']);
-        $suspendedUser->givePermissionTo([
+        $suspendedUser = Role::firstOrCreate(['name' => 'suspended']);
+        $suspendedUser->syncPermissions([
             'view profile',
         ]);
 

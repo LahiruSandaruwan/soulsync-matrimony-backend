@@ -21,8 +21,8 @@ return new class extends Migration
             $table->enum('gender', ['male', 'female', 'other'])->nullable();
             $table->string('phone', 20)->nullable();
             $table->string('country_code', 10)->nullable();
-            $table->timestamp('registration_date');
-            $table->timestamp('deletion_date');
+            $table->timestamp('registration_date')->useCurrent();
+            $table->timestamp('deletion_date')->useCurrent();
             $table->enum('deleted_by', ['user', 'admin', 'system'])->default('user');
             $table->text('deletion_reason')->nullable();
             $table->string('ip_address', 45)->nullable();
@@ -52,7 +52,7 @@ return new class extends Migration
             $table->string('first_name');
             $table->string('last_name')->nullable();
             $table->json('user_data')->nullable(); // Complete user snapshot
-            $table->timestamp('deletion_date');
+            $table->timestamp('deletion_date')->useCurrent();
             $table->enum('deleted_by', ['admin', 'system'])->default('admin');
             $table->unsignedBigInteger('deleted_by_admin_id')->nullable();
             $table->text('admin_reason')->nullable();

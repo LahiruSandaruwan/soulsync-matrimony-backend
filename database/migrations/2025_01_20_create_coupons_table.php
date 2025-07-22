@@ -36,20 +36,26 @@ return new class extends Migration
 
         Schema::create('coupon_usages', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('coupon_id')->constrained()->onDelete('cascade');
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('subscription_id')->nullable()->constrained()->onDelete('set null');
+            $table->foreignId('coupon_id')->constrained('coupons')->onDelete('cascade');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->unsignedBigInteger('subscription_id')->nullable();
             $table->decimal('original_amount', 8, 2);
             $table->decimal('discount_amount', 8, 2);
             $table->decimal('final_amount', 8, 2);
             $table->string('currency', 3)->default('USD');
-            $table->string('payment_gateway')->nullable();
-            $table->string('transaction_id')->nullable();
+            $table->json('metadata')->nullable(); // Additional coupon usage details
             $table->timestamps();
 
-            $table->index(['coupon_id', 'user_id']);
-            $table->index(['user_id', 'created_at']);
+            $table->index(['user_id', 'coupon_id']);
+            $table->index('subscription_id');
         });
+        
+        // Add foreign key constraint for subscription_id after subscriptions table exists
+        if (Schema::hasTable('subscriptions')) {
+            Schema::table('coupon_usages', function (Blueprint $table) {
+                $table->foreign('subscription_id')->references('id')->on('subscriptions')->onDelete('set null');
+            });
+        }
     }
 
     /**

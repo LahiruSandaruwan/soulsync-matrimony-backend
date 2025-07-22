@@ -42,7 +42,7 @@ return new class extends Migration
             // Communication
             $table->boolean('can_communicate')->default(false); // If they can chat (mutual like)
             $table->timestamp('communication_started_at')->nullable();
-            $table->foreignId('conversation_id')->nullable()->constrained()->onDelete('set null');
+            $table->unsignedBigInteger('conversation_id')->nullable(); // References conversations table
             
             // Premium features
             $table->boolean('is_premium_match')->default(false); // Premium-only match
@@ -68,6 +68,7 @@ return new class extends Migration
             $table->index(['can_communicate']);
             $table->index(['expires_at']);
             $table->index(['is_premium_match']);
+            $table->index('conversation_id');
         });
     }
 

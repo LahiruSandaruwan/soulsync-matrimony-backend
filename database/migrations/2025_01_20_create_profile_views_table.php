@@ -37,9 +37,9 @@ return new class extends Migration
 
         // Add profile view counters to users table
         Schema::table('users', function (Blueprint $table) {
-            $table->integer('total_profile_views')->default(0)->after('last_seen_at');
-            $table->integer('unique_profile_views')->default(0)->after('total_profile_views');
-            $table->timestamp('last_profile_view_at')->nullable()->after('unique_profile_views');
+            $table->integer('total_profile_views')->default(0);
+            $table->integer('unique_profile_views')->default(0);
+            $table->timestamp('last_profile_view_at')->nullable();
         });
     }
 
