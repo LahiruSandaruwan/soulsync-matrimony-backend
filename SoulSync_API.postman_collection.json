@@ -1,0 +1,601 @@
+{
+  "info": {
+    "name": "SoulSync Matrimony API",
+    "description": "Complete API collection for SoulSync Matrimonial Platform",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"phone\": \"+1234567890\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\",\n  \"date_of_birth\": \"1990-01-15\",\n  \"gender\": \"male\",\n  \"country_code\": \"US\",\n  \"terms_accepted\": true,\n  \"privacy_accepted\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"password123\",\n  \"remember_me\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile Management",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["profile"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profile\": {\n    \"height_cm\": 175,\n    \"current_city\": \"Colombo\",\n    \"current_country\": \"Sri Lanka\",\n    \"religion\": \"Buddhist\",\n    \"caste\": \"Govi\",\n    \"education_level\": \"Bachelor's\",\n    \"occupation\": \"Software Engineer\",\n    \"annual_income_usd\": 35000,\n    \"about_me\": \"Looking for a life partner who shares similar values\",\n    \"family_details\": \"Close-knit family with traditional values\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["profile"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Photo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photo",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "is_profile_picture",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/profile/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["profile", "photos"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile Completion Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/profile/completion-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["profile", "completion-status"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Matching & Discovery",
+      "item": [
+        {
+          "name": "Get Daily Matches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches/daily",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", "daily"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Like User",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches/:userId/like",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", ":userId", "like"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Super Like User",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches/:userId/super-like",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", ":userId", "super-like"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Mutual Matches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches/mutual",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", "mutual"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Who Liked Me (Premium)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches/liked-me",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", "liked-me"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Search & Browse",
+      "item": [
+        {
+          "name": "Advanced Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"age_range\": {\n    \"min\": 25,\n    \"max\": 35\n  },\n  \"location\": {\n    \"countries\": [\"Sri Lanka\", \"India\"],\n    \"max_distance_km\": 50\n  },\n  \"education\": [\"Bachelor's\", \"Master's\"],\n  \"religion\": [\"Buddhist\", \"Hindu\"],\n  \"height_range\": {\n    \"min_cm\": 160,\n    \"max_cm\": 180\n  },\n  \"income_range\": {\n    \"min_usd\": 20000,\n    \"max_usd\": 100000\n  },\n  \"marital_status\": [\"never_married\"],\n  \"have_children\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/search/advanced",
+              "host": ["{{baseUrl}}"],
+              "path": ["search", "advanced"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Browse Profiles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/browse?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["browse"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Messaging",
+      "item": [
+        {
+          "name": "Get Conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/chat/conversations",
+              "host": ["{{baseUrl}}"],
+              "path": ["chat", "conversations"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation Messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/chat/conversations/:conversationId",
+              "host": ["{{baseUrl}}"],
+              "path": ["chat", "conversations", ":conversationId"],
+              "variable": [
+                {
+                  "key": "conversationId",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Hello! Nice to meet you.\",\n  \"type\": \"text\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chat/conversations/:conversationId/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["chat", "conversations", ":conversationId", "messages"],
+              "variable": [
+                {
+                  "key": "conversationId",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "Get Subscription Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/subscription/plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["subscription", "plans"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Subscribe to Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_type\": \"premium\",\n  \"duration_months\": 1,\n  \"payment_method\": \"stripe\",\n  \"payment_token\": \"tok_visa\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/subscription/subscribe",
+              "host": ["{{baseUrl}}"],
+              "path": ["subscription", "subscribe"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current Subscription",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/subscription",
+              "host": ["{{baseUrl}}"],
+              "path": ["subscription"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Horoscope",
+      "item": [
+        {
+          "name": "Get Horoscope",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/horoscope",
+              "host": ["{{baseUrl}}"],
+              "path": ["horoscope"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Horoscope Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"birth_date\": \"1990-01-15\",\n  \"birth_time\": \"14:30\",\n  \"birth_place\": \"Colombo, Sri Lanka\",\n  \"birth_coordinates\": {\n    \"latitude\": 6.9271,\n    \"longitude\": 79.8612\n  },\n  \"zodiac_sign\": \"Capricorn\",\n  \"moon_sign\": \"Taurus\",\n  \"nakshatra\": \"Rohini\",\n  \"manglik_status\": \"no\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/horoscope",
+              "host": ["{{baseUrl}}"],
+              "path": ["horoscope"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Check Compatibility",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/horoscope/compatibility/:userId",
+              "host": ["{{baseUrl}}"],
+              "path": ["horoscope", "compatibility", ":userId"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Photo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/photos/:photoId/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "photos", ":photoId", "approve"],
+              "variable": [
+                {
+                  "key": "photoId",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Countries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/countries",
+              "host": ["{{baseUrl}}"],
+              "path": ["public", "countries"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Interests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/public/interests",
+              "host": ["{{baseUrl}}"],
+              "path": ["public", "interests"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+} 

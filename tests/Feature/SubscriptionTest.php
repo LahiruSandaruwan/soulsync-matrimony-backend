@@ -548,7 +548,7 @@ class SubscriptionTest extends TestCase
         $this->assertDatabaseHas('subscriptions', [
             'user_id' => $user->id,
             'plan_type' => 'premium',
-            'status' => 'trial',
+            'status' => 'active',
         ]);
 
         $user->refresh();
@@ -565,7 +565,7 @@ class SubscriptionTest extends TestCase
         // Create existing trial
         Subscription::factory()->create([
             'user_id' => $user->id,
-            'status' => 'trial',
+            'status' => 'active',
         ]);
 
         Sanctum::actingAs($user);

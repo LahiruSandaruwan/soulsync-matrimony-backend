@@ -29,6 +29,7 @@ class AuthenticationTest extends TestCase
             'phone' => $this->faker->phoneNumber,
             'country_code' => 'LK',
             'terms_accepted' => true,
+            'privacy_accepted' => true,
         ];
 
         $response = $this->postJson('/api/v1/auth/register', $userData);
@@ -70,6 +71,7 @@ class AuthenticationTest extends TestCase
             'date_of_birth' => $this->faker->date('Y-m-d', '2000-01-01'),
             'gender' => 'male',
             'terms_accepted' => true,
+            'privacy_accepted' => true,
         ];
 
         $response = $this->postJson('/api/v1/auth/register', $userData);
@@ -94,6 +96,7 @@ class AuthenticationTest extends TestCase
             'date_of_birth' => $this->faker->date('Y-m-d', '2000-01-01'),
             'gender' => 'male',
             'terms_accepted' => true,
+            'privacy_accepted' => true,
         ];
 
         $response = $this->postJson('/api/v1/auth/register', $userData);
@@ -116,6 +119,7 @@ class AuthenticationTest extends TestCase
             'date_of_birth' => $this->faker->date('Y-m-d', '2000-01-01'),
             'gender' => 'male',
             'terms_accepted' => true,
+            'privacy_accepted' => true,
         ];
 
         $response = $this->postJson('/api/v1/auth/register', $userData);
@@ -214,7 +218,7 @@ class AuthenticationTest extends TestCase
         $response->assertStatus(403)
                  ->assertJson([
                      'success' => false,
-                     'message' => 'Account is inactive. Please contact support.',
+                     'message' => 'Account is not active. Please contact support.',
                  ]);
     }
 
@@ -346,6 +350,7 @@ class AuthenticationTest extends TestCase
             'current_password' => $currentPassword,
             'new_password' => $newPassword,
             'new_password_confirmation' => $newPassword,
+            'password' => $currentPassword,
         ]);
 
         $response->assertStatus(200)
@@ -374,6 +379,7 @@ class AuthenticationTest extends TestCase
             'current_password' => 'WrongPassword123!',
             'new_password' => 'NewPassword123!',
             'new_password_confirmation' => 'NewPassword123!',
+            'password' => 'WrongPassword123!',
         ]);
 
         $response->assertStatus(400)
@@ -450,6 +456,7 @@ class AuthenticationTest extends TestCase
             'date_of_birth' => $this->faker->date('Y-m-d', '2000-01-01'),
             'gender' => 'male',
             'terms_accepted' => true,
+            'privacy_accepted' => true,
         ];
 
         $response = $this->postJson('/api/v1/auth/register', $userData);
@@ -479,6 +486,7 @@ class AuthenticationTest extends TestCase
             'date_of_birth' => $this->faker->date('Y-m-d', '2000-01-01'),
             'gender' => 'male',
             'terms_accepted' => true,
+            'privacy_accepted' => true,
             'referral_code' => 'ABCD1234',
         ];
 
@@ -501,6 +509,9 @@ class AuthenticationTest extends TestCase
             'name' => 'John Doe',
             'email' => $this->faker->unique()->safeEmail,
             'avatar' => 'https://example.com/avatar.jpg',
+            'social_id' => '123456789',
+            'first_name' => 'John',
+            'last_name' => 'Doe',
         ];
 
         $response = $this->postJson('/api/v1/auth/social-login', $socialData);

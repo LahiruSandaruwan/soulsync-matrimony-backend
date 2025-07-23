@@ -7,6 +7,7 @@ use App\Models\UserMatch;
 use App\Models\UserProfile;
 use App\Models\UserPreference;
 use App\Models\ExchangeRate;
+use App\Events\MatchFound;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -447,6 +448,10 @@ class MatchingService
         
         if ($result && $match->is_mutual) {
             // It's a mutual match!
+            
+            // Fire match event for real-time updates and notifications
+            event(new MatchFound($match, $user, $targetUser));
+            
             return [
                 'success' => true,
                 'is_match' => true,

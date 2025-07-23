@@ -35,8 +35,10 @@ return new class extends Migration
             // Moderation
             $table->enum('status', ['pending', 'approved', 'rejected', 'flagged'])->default('pending');
             $table->text('rejection_reason')->nullable();
+            $table->text('admin_notes')->nullable(); // Admin/moderator notes
             $table->foreignId('moderated_by')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamp('moderated_at')->nullable();
+            $table->string('upload_ip', 45)->nullable(); // Uploader's IP address
             
             // Privacy and access
             $table->json('visible_to')->nullable(); // Array of user IDs who can see private photos

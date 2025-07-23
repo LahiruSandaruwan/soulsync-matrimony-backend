@@ -94,8 +94,8 @@ class AuthController extends Controller
             
             DB::commit();
 
-            // Send welcome email (queue this in production)
-            $this->sendWelcomeEmail($user);
+            // Dispatch welcome email job
+            \App\Jobs\SendWelcomeEmail::dispatch($user)->delay(now()->addSeconds(10));
 
             return response()->json([
                 'success' => true,

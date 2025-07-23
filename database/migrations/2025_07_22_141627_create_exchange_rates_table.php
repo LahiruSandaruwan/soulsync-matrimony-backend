@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('from_currency', 3); // Base currency (USD)
             $table->string('to_currency', 3); // Target currency (LKR, EUR, etc.)
             $table->decimal('rate', 12, 6); // Exchange rate (1 USD = X target currency)
-            $table->decimal('inverse_rate', 12, 6); // Inverse rate (1 target = X USD)
+            $table->decimal('inverse_rate', 12, 6)->default(0); // Inverse rate (1 target = X USD)
             
             // Rate metadata
             $table->string('source', 50)->default('api'); // Source of rate (api, manual, bank)
