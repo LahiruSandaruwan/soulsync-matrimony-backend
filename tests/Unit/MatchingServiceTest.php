@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 use App\Services\MatchingService;
 use App\Models\User;
 use App\Models\UserProfile;
@@ -358,13 +358,13 @@ class MatchingServiceTest extends TestCase
         UserMatch::factory()->create([
             'user_id' => $user1->id,
             'matched_user_id' => $user2->id,
-            'user_action' => 'like',
+            'user_action' => 'liked',
         ]);
 
         UserMatch::factory()->create([
             'user_id' => $user2->id,
             'matched_user_id' => $user1->id,
-            'user_action' => 'like',
+            'user_action' => 'liked',
         ]);
 
         $isMutual = $this->matchingService->checkMutualMatch($user1->id, $user2->id);
@@ -384,7 +384,7 @@ class MatchingServiceTest extends TestCase
         UserMatch::factory()->create([
             'user_id' => $user1->id,
             'matched_user_id' => $user2->id,
-            'user_action' => 'like',
+            'user_action' => 'liked',
         ]);
 
         $isMutual = $this->matchingService->checkMutualMatch($user1->id, $user2->id);
@@ -419,7 +419,7 @@ class MatchingServiceTest extends TestCase
         UserMatch::factory()->create([
             'user_id' => $user->id,
             'matched_user_id' => $blockedUser->id,
-            'user_action' => 'block',
+            'user_action' => 'blocked',
         ]);
 
         $candidates = collect([$blockedUser, $normalUser]);
