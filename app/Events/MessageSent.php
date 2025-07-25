@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use App\Models\Message;
-use App\Models\User;
+use App\Models\Conversation;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
@@ -17,27 +17,28 @@ class MessageSent implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public $message;
+    public $conversation;
     public $sender;
-    public $recipient;
 
     /**
      * Create a new event instance.
      */
-    public function __construct(Message $message, User $sender, User $recipient)
+    public function __construct(Message $message, Conversation $conversation)
     {
         $this->message = $message;
-        $this->sender = $sender;
-        $this->recipient = $recipient;
+        $this->conversation = $conversation;
+        $this->sender = $message->sender;
     }
 
     /**
      * Get the channels the event should broadcast on.
+     *
+     * @return array<int, \Illuminate\Broadcasting\Channel>
      */
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('chat.user.' . $this->recipient->id),
-            new PrivateChannel('chat.conversation.' . $this->message->conversation_id),
+            new PrivateChannel('chat.' . $this->conversation->id),
         ];
     }
 
@@ -50,18 +51,28 @@ class MessageSent implements ShouldBroadcast
             'message' => [
                 'id' => $this->message->id,
                 'conversation_id' => $this->message->conversation_id,
+                'sender_id' => $this->message->sender_id,
                 'content' => $this->message->content,
-                'type' => $this->message->type,
-                'media_path' => $this->message->media_path,
+                'message_type' => $this->message->message_type,
+                'attachment_url' => $this->message->attachment_url,
+                'attachment_type' => $this->message->attachment_type,
+                'reply_to_id' => $this->message->reply_to_id,
+                'forwarded_from_id' => $this->message->forwarded_from_id,
+                'is_edited' => $this->message->is_edited,
                 'created_at' => $this->message->created_at->toISOString(),
-                'sender' => [
-                    'id' => $this->sender->id,
-                    'first_name' => $this->sender->first_name,
-                    'last_name' => $this->sender->last_name,
-                    'profile_picture' => $this->sender->profilePicture?->file_path,
-                ],
+                'updated_at' => $this->message->updated_at->toISOString(),
             ],
-            'timestamp' => now()->toISOString(),
+            'sender' => [
+                'id' => $this->sender->id,
+                'name' => $this->sender->name,
+                'profile_photo_url' => $this->sender->profile_photo_url,
+            ],
+            'conversation' => [
+                'id' => $this->conversation->id,
+                'type' => $this->conversation->conversation_type,
+                'display_name' => $this->conversation->getDisplayName(),
+                'last_message_at' => $this->conversation->last_message_at?->toISOString(),
+            ],
         ];
     }
 
@@ -70,6 +81,14 @@ class MessageSent implements ShouldBroadcast
      */
     public function broadcastAs(): string
     {
-        return 'message.sent';
+        return 'chat.message.sent';
+    }
+
+    /**
+     * Determine if this event should broadcast.
+     */
+    public function broadcastWhen(): bool
+    {
+        return $this->message->message_type !== Message::MESSAGE_TYPE_SYSTEM;
     }
 } 
