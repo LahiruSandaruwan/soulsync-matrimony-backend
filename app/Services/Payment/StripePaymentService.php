@@ -9,16 +9,16 @@ use Illuminate\Support\Facades\Http;
 
 class StripePaymentService
 {
-    private string $secretKey;
+    private string $secretKey = 'sk_test_dummy';
     private string $publishableKey;
     private string $webhookSecret;
     private string $baseUrl;
 
     public function __construct()
     {
-        $this->secretKey = config('services.stripe.secret_key');
-        $this->publishableKey = config('services.stripe.publishable_key');
-        $this->webhookSecret = config('services.stripe.webhook_secret');
+        $this->secretKey = config('services.stripe.secret_key') ?? 'sk_test_dummy';
+        $this->publishableKey = config('services.stripe.publishable_key') ?? 'pk_test_dummy';
+        $this->webhookSecret = config('services.stripe.webhook_secret') ?? 'whsec_dummy';
         $this->baseUrl = 'https://api.stripe.com/v1';
     }
 
@@ -241,6 +241,42 @@ class StripePaymentService
                 'error' => $e->getMessage(),
             ]);
             return [];
+        }
+    }
+
+    /**
+     * Verify payment with Stripe
+     */
+    public function verifyPayment(string $transactionId): array
+    {
+        try {
+            $response = $this->makeStripeRequest('GET', "/payment_intents/{$transactionId}");
+            
+            if (isset($response['status']) && $response['status'] === 'succeeded') {
+                return [
+                    'success' => true,
+                    'verified' => true,
+                    'amount' => $response['amount'] / 100, // Convert from cents
+                    'currency' => $response['currency'],
+                    'status' => $response['status'],
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'verified' => false,
+                    'status' => $response['status'] ?? 'unknown',
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('Stripe payment verification error', [
+                'transaction_id' => $transactionId,
+                'error' => $e->getMessage(),
+            ]);
+            return [
+                'success' => false,
+                'verified' => false,
+                'error' => $e->getMessage(),
+            ];
         }
     }
 

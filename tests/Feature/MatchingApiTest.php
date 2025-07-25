@@ -67,6 +67,11 @@ class MatchingApiTest extends TestCase
 
         $response = $this->postJson("/api/v1/matches/{$targetUser->id}/like");
 
+        // Debug: dump the response JSON if not OK
+        if ($response->status() !== 200) {
+            dump($response->json());
+        }
+
         $response->assertOk()
                 ->assertJson([
                     'success' => true,
@@ -124,6 +129,9 @@ class MatchingApiTest extends TestCase
         Sanctum::actingAs($user2);
         $response = $this->postJson("/api/v1/matches/{$user1->id}/like");
 
+        if ($response->status() !== 200) {
+            dump($response->json());
+        }
         $response->assertOk()
                 ->assertJson([
                     'success' => true,
@@ -211,8 +219,15 @@ class MatchingApiTest extends TestCase
                         'matches' => [
                             '*' => [
                                 'id',
-                                'user',
-                                'compatibility_score',
+                                'first_name',
+                                'age',
+                                'location',
+                                'occupation',
+                                'profile_picture',
+                                'match_id',
+                                'match_status',
+                                'can_communicate',
+                                'conversation_id',
                                 'matched_at',
                             ]
                         ]
@@ -253,7 +268,13 @@ class MatchingApiTest extends TestCase
                         'likes' => [
                             '*' => [
                                 'id',
-                                'user',
+                                'first_name',
+                                'age',
+                                'location',
+                                'occupation',
+                                'profile_picture',
+                                'match_id',
+                                'match_status',
                                 'action_type',
                                 'liked_at',
                             ]

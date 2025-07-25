@@ -57,9 +57,9 @@ class UserController extends Controller
 
             // Check interaction history
             $interaction = UserMatch::where(function ($query) use ($currentUser, $user) {
-                $query->where('user_id', $currentUser->id)->where('target_user_id', $user->id);
+                $query->where('user_id', $currentUser->id)->where('matched_user_id', $user->id);
             })->orWhere(function ($query) use ($currentUser, $user) {
-                $query->where('user_id', $user->id)->where('target_user_id', $currentUser->id);
+                $query->where('user_id', $user->id)->where('matched_user_id', $currentUser->id);
             })->first();
 
             $interactionStatus = [
@@ -187,7 +187,7 @@ class UserController extends Controller
         try {
             // Check if already interacted
             $existingMatch = UserMatch::where('user_id', $currentUser->id)
-                ->where('target_user_id', $user->id)
+                ->where('matched_user_id', $user->id)
                 ->first();
 
             if ($existingMatch) {
@@ -216,15 +216,16 @@ class UserController extends Controller
             // Create the interest/like
             $match = UserMatch::create([
                 'user_id' => $currentUser->id,
-                'target_user_id' => $user->id,
-                'action' => 'like',
-                'message' => $request->get('message'),
+                'matched_user_id' => $user->id,
+                'user_action' => 'liked',
+                'user_action_at' => now(),
+                'status' => 'liked',
             ]);
 
             // Check for mutual match
             $mutualLike = UserMatch::where('user_id', $user->id)
-                ->where('target_user_id', $currentUser->id)
-                ->where('action', 'like')
+                ->where('matched_user_id', $currentUser->id)
+                ->where('user_action', 'liked')
                 ->first();
 
             $isMatch = false;
@@ -527,12 +528,12 @@ class UserController extends Controller
         // Check if blocked
         $isBlocked = UserMatch::where(function ($query) use ($currentUser, $targetUser) {
             $query->where('user_id', $currentUser->id)
-                  ->where('target_user_id', $targetUser->id)
-                  ->where('action', 'block');
+                  ->where('matched_user_id', $targetUser->id)
+                  ->where('user_action', 'blocked');
         })->orWhere(function ($query) use ($currentUser, $targetUser) {
             $query->where('user_id', $targetUser->id)
-                  ->where('target_user_id', $currentUser->id)
-                  ->where('action', 'block');
+                  ->where('matched_user_id', $currentUser->id)
+                  ->where('matched_user_action', 'blocked');
         })->exists();
 
         if ($isBlocked) {
@@ -571,10 +572,10 @@ class UserController extends Controller
         // If show_contact_info is false, only matches can see
         if (!$profile->show_contact_info) {
             return UserMatch::where(function ($query) use ($currentUser, $targetUser) {
-                $query->where('user_id', $currentUser->id)->where('target_user_id', $targetUser->id);
+                $query->where('user_id', $currentUser->id)->where('matched_user_id', $targetUser->id);
             })->orWhere(function ($query) use ($currentUser, $targetUser) {
-                $query->where('user_id', $targetUser->id)->where('target_user_id', $currentUser->id);
-            })->whereNotNull('matched_at')->exists();
+                $query->where('user_id', $targetUser->id)->where('matched_user_id', $currentUser->id);
+            })->where('status', 'mutual')->exists();
         }
 
         return true;
@@ -583,13 +584,13 @@ class UserController extends Controller
     private function canViewHoroscope($currentUser, $targetUser): bool
     {
         $profile = $targetUser->profile;
-        return $profile ? $profile->show_horoscope : false;
+        return $profile && $profile->show_horoscope ? true : false;
     }
 
     private function canViewIncome($currentUser, $targetUser): bool
     {
         $profile = $targetUser->profile;
-        return $profile ? $profile->show_income : false;
+        return $profile && $profile->show_income ? true : false;
     }
 
     private function canViewUserPhotos($currentUser, $targetUser): array
@@ -608,10 +609,10 @@ class UserController extends Controller
 
         // Matches can always view private photos
         $isMatch = UserMatch::where(function ($query) use ($currentUser, $targetUser) {
-            $query->where('user_id', $currentUser->id)->where('target_user_id', $targetUser->id);
+            $query->where('user_id', $currentUser->id)->where('matched_user_id', $targetUser->id);
         })->orWhere(function ($query) use ($currentUser, $targetUser) {
-            $query->where('user_id', $targetUser->id)->where('target_user_id', $currentUser->id);
-        })->whereNotNull('matched_at')->exists();
+            $query->where('user_id', $targetUser->id)->where('matched_user_id', $currentUser->id);
+        })->where('status', 'mutual')->exists();
 
         if ($isMatch) {
             $canViewPrivate = true;
@@ -643,49 +644,73 @@ class UserController extends Controller
                 Storage::url($user->profilePicture->file_path) : null,
         ];
 
+        // Add profile completion percentage
+        $userData['profile_completion'] = $user->profile_completion_percentage ?? 0;
+        
+        // Add photos
+        $userData['photos'] = $user->photos()->where('status', 'approved')->get()->map(function ($photo) {
+            return [
+                'id' => $photo->id,
+                'file_path' => $photo->file_path,
+                'is_profile_picture' => $photo->is_profile_picture,
+            ];
+        });
+        
         // Add profile data if available
         if ($user->profile) {
             $profile = $user->profile;
-            $userData = array_merge($userData, [
-                'bio' => $profile->bio,
-                'occupation' => $profile->occupation,
-                'education' => $profile->education,
-                'height' => $profile->height,
-                'marital_status' => $profile->marital_status,
+            $userData['profile'] = [
+                'height_cm' => $profile->height_cm,
+                'current_city' => $profile->current_city,
                 'religion' => $profile->religion,
+                'education_level' => $profile->education_level,
+                'occupation' => $profile->occupation,
+                'about_me' => $profile->about_me,
+                'marital_status' => $profile->marital_status,
                 'caste' => $profile->caste,
                 'mother_tongue' => $profile->mother_tongue,
-                'city' => $profile->city,
-                'state' => $profile->state,
-                'country' => $profile->country,
+                'current_state' => $profile->current_state,
+                'current_country' => $profile->current_country,
                 'family_type' => $profile->family_type,
                 'diet' => $profile->diet,
                 'smoking' => $profile->smoking,
                 'drinking' => $profile->drinking,
-            ]);
+                'annual_income_usd' => $profile->annual_income_usd
+            ];
+        }
+        // Add photos if available
+        if ($user->photos) {
+            $userData['photos'] = $user->photos->map(function ($photo) {
+                return [
+                    'id' => $photo->id,
+                    'file_path' => $photo->file_path,
+                    'thumbnail_path' => $photo->thumbnail_path,
+                    'is_profile_picture' => $photo->is_profile_picture,
+                    'status' => $photo->status,
+                ];
+            });
+        }
 
-            // Conditional data based on permissions
-            if ($permissions['can_view_contact']) {
-                $userData['phone'] = $user->phone;
-                $userData['whatsapp_number'] = $profile->whatsapp_number;
-            }
+        // Conditional data based on permissions
+        if ($permissions['can_view_contact'] && $user->profile) {
+            $userData['phone'] = $user->phone;
+            $userData['whatsapp_number'] = $user->profile->whatsapp_number;
+        }
 
-            if ($permissions['can_view_income']) {
-                $userData['annual_income_usd'] = $profile->annual_income_usd;
-                $userData['income_currency'] = $profile->income_currency;
-            }
+        if ($permissions['can_view_income'] && $user->profile) {
+            $userData['annual_income_usd'] = $user->profile->annual_income_usd;
+            $userData['income_currency'] = $user->profile->income_currency;
         }
 
         return $userData;
     }
 
     /**
-     * Record profile view (could be expanded to separate table)
+     * Record profile view using ProfileView model
      */
     private function recordProfileView($viewer, $viewed): void
     {
-        // Simple implementation - could be expanded to profile_views table
-        // For now, we'll just update view count if field exists
+        \App\Models\ProfileView::recordView($viewed, $viewer);
     }
 
     /**

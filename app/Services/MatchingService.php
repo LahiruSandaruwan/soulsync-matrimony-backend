@@ -22,9 +22,16 @@ class MatchingService
     {
         $cacheKey = "daily_matches_{$user->id}_" . now()->format('Y-m-d');
         
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($user, $limit) {
-            return $this->findMatches($user, $limit, 'daily');
-        });
+        return collect(Cache::remember($cacheKey, now()->addHours(6), function () use ($user, $limit) {
+            $matches = $this->findMatches($user, $limit, 'daily');
+            return $matches->map(function ($match) use ($user) {
+                return [
+                    'user' => $match,
+                    'compatibility_score' => $match->compatibility_score ?? 0,
+                    'matching_factors' => $this->getMatchingFactors($user, $match),
+                ];
+            })->toArray();
+        }));
     }
 
     /**
@@ -211,7 +218,7 @@ class MatchingService
     /**
      * Calculate horoscope compatibility between two users.
      */
-    private function calculateHoroscopeCompatibility(User $user1, User $user2): float
+    public function calculateHoroscopeCompatibility(User $user1, User $user2): float
     {
         $horoscope1 = $user1->horoscope;
         $horoscope2 = $user2->horoscope;
@@ -438,29 +445,52 @@ class MatchingService
             'user_id' => $user->id,
             'matched_user_id' => $targetUser->id,
         ], [
-            'match_type' => 'user_action',
+            'match_type' => 'mutual_interest',
             'status' => 'pending',
             'compatibility_score' => $this->calculateQuickCompatibility($user, $targetUser),
         ]);
-        
+
+        // Also check for the reciprocal match
+        $reciprocal = UserMatch::where('user_id', $targetUser->id)
+            ->where('matched_user_id', $user->id)
+            ->first();
+
         // Process the like
         $result = $match->like($user, $isSuperLike);
-        
-        if ($result && $match->is_mutual) {
-            // It's a mutual match!
-            
+
+        // If reciprocal exists and both sides liked, set both to mutual
+        if ($reciprocal && in_array($reciprocal->user_action, ['liked', 'super_liked']) && in_array($match->user_action, ['liked', 'super_liked'])) {
+            $match->status = 'mutual';
+            $match->can_communicate = true;
+            $match->communication_started_at = now();
+            $match->save();
+            $reciprocal->status = 'mutual';
+            $reciprocal->can_communicate = true;
+            $reciprocal->communication_started_at = now();
+            $reciprocal->save();
             // Fire match event for real-time updates and notifications
-            event(new MatchFound($match, $user, $targetUser));
-            
+            event(new \App\Events\MatchFound($match, $user, $targetUser));
             return [
                 'success' => true,
                 'is_match' => true,
                 'match_id' => $match->id,
                 'conversation_id' => $match->conversation_id,
-                'message' => 'It\'s a match! You can now start chatting.'
+                'message' => "It's a match! You can now start chatting."
             ];
         }
-        
+
+        if ($result && $match->is_mutual) {
+            // It's a mutual match!
+            event(new \App\Events\MatchFound($match, $user, $targetUser));
+            return [
+                'success' => true,
+                'is_match' => true,
+                'match_id' => $match->id,
+                'conversation_id' => $match->conversation_id,
+                'message' => "It's a match! You can now start chatting."
+            ];
+        }
+
         return [
             'success' => $result,
             'is_match' => false,
@@ -546,13 +576,30 @@ class MatchingService
     public function applyVerificationBoost($score, $user) { return $user->verification_status === 'verified' ? $score + 5 : $score; /* TODO: Implement real logic */ }
     public function checkDealBreakers($user, $targetUser) { return true; /* TODO: Implement real logic */ }
     public function calculateCompatibilityScore($user1, $user2) { return 80.0; /* TODO: Implement real logic */ }
-    public function calculateAgeCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
+    public function calculateAgeCompatibility($user1, $user2) {
+        $preferences = $user1->preferences;
+        $dob = $user2->date_of_birth;
+        if (!$dob || !$preferences) return 0;
+        $age = \Carbon\Carbon::parse($dob)->age;
+        if ($age < $preferences->min_age || $age > $preferences->max_age) return 0;
+        return 50.0; // or some positive score for match
+    }
     public function calculateLocationCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
     public function calculateEducationCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
     public function calculateReligionCompatibility($user1, $user2) { return 100.0; /* TODO: Implement real logic */ }
     public function calculateLifestyleCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
     public function calculateInterestCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
-    public function checkMutualMatch($userId1, $userId2) { return true; /* TODO: Implement real logic */ }
+    public function checkMutualMatch($userId1, $userId2) {
+        $like1 = \App\Models\UserMatch::where('user_id', $userId1)
+            ->where('matched_user_id', $userId2)
+            ->where('user_action', 'liked')
+            ->first();
+        $like2 = \App\Models\UserMatch::where('user_id', $userId2)
+            ->where('matched_user_id', $userId1)
+            ->where('user_action', 'liked')
+            ->first();
+        return $like1 && $like2;
+    }
     public function getMatchQuality($score) {
         if ($score >= 90) return 'excellent';
         if ($score >= 75) return 'very_good';
@@ -560,5 +607,13 @@ class MatchingService
         if ($score >= 40) return 'fair';
         return 'poor';
     }
-    public function filterBlockedUsers($user, $candidates) { return $candidates; /* TODO: Implement real logic */ }
+    public function filterBlockedUsers($user, $candidates) {
+        $blockedIds = \App\Models\UserMatch::where('user_id', $user->id)
+            ->where('user_action', 'blocked')
+            ->pluck('matched_user_id')
+            ->toArray();
+        return $candidates->filter(function($candidate) use ($blockedIds) {
+            return !in_array($candidate->id, $blockedIds);
+        });
+    }
 } 

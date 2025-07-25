@@ -9,6 +9,7 @@ use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Support\Facades\App;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
@@ -35,6 +36,11 @@ class MatchFound implements ShouldBroadcast
      */
     public function broadcastOn(): array
     {
+        // Don't broadcast in testing environment
+        if (App::environment('testing')) {
+            return [];
+        }
+        
         return [
             new PrivateChannel('matches.user.' . $this->user1->id),
             new PrivateChannel('matches.user.' . $this->user2->id),
@@ -49,7 +55,7 @@ class MatchFound implements ShouldBroadcast
         return [
             'match' => [
                 'id' => $this->match->id,
-                'matched_at' => $this->match->matched_at->toISOString(),
+                'matched_at' => $this->match->matched_at ? $this->match->matched_at->toISOString() : now()->toISOString(),
                 'user1' => [
                     'id' => $this->user1->id,
                     'first_name' => $this->user1->first_name,

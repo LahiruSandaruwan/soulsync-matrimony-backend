@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 use Intervention\Image\ImageManager;
 use Intervention\Image\Drivers\Gd\Driver;
 use Illuminate\Support\Str;
+use Intervention\Image\Encoders\JpegEncoder;
 
 class PhotoController extends Controller
 {
@@ -109,9 +110,7 @@ class PhotoController extends Controller
             $thumbnailPath = $userDirectory . '/thumbnails/' . $filename;
 
             // Process and store images
-            $this->processAndStoreImage($photo, $fullPath, 1200, 1600); // Full size (max 1200x1600)
-            $this->processAndStoreImage($photo, $mediumPath, 600, 800);   // Medium size
-            $this->processAndStoreImage($photo, $thumbnailPath, 200, 267); // Thumbnail
+            $paths = $this->processAndStoreImage($photo, $filename);
 
             // If this is set as profile picture, unset others
             if ($request->get('is_profile_picture', false)) {
@@ -130,13 +129,14 @@ class PhotoController extends Controller
                 'user_id' => $user->id,
                 'original_filename' => $originalFilename,
                 'stored_filename' => $filename,
-                'file_path' => $fullPath,
-                'thumbnail_path' => $thumbnailPath,
-                'medium_path' => $mediumPath,
+                'file_path' => $paths['original'],
+                'thumbnail_path' => $paths['thumbnail'],
+                'medium_path' => $paths['medium'],
+                'large_path' => $paths['large'],
                 'file_size' => $fileSize,
                 'mime_type' => $mimeType,
-                'width' => null, // Will be set after image processing
-                'height' => null, // Will be set after image processing
+                'width' => $paths['width'],
+                'height' => $paths['height'],
                 'is_profile_picture' => $request->get('is_profile_picture', false),
                 'is_private' => $request->get('is_private', false),
                 'sort_order' => $sortOrder,
@@ -144,13 +144,7 @@ class PhotoController extends Controller
             ]);
 
             // Get image dimensions and update
-            $imageDimensions = getimagesize(Storage::path($fullPath));
-            if ($imageDimensions) {
-                $userPhoto->update([
-                    'width' => $imageDimensions[0],
-                    'height' => $imageDimensions[1],
-                ]);
-            }
+            // (No need to update width/height, already set above)
 
             return response()->json([
                 'success' => true,
@@ -412,21 +406,58 @@ class PhotoController extends Controller
 
     /**
      * Process and store image with resizing
+     * Returns array of paths and dimensions
      */
-    private function processAndStoreImage($file, $path, $maxWidth, $maxHeight): void
+    private function processAndStoreImage($file, $filename): array
     {
+        $user = auth()->user();
+        $userDirectory = 'photos/' . $user->id;
+        $paths = [
+            'original' => $userDirectory . '/full/' . $filename,
+            'medium' => $userDirectory . '/medium/' . $filename,
+            'thumbnail' => $userDirectory . '/thumbnails/' . $filename,
+            'large' => $userDirectory . '/large/' . $filename,
+        ];
+
+        // Full size
         $image = $this->imageManager->read($file);
-        
-        // Resize image while maintaining aspect ratio
-        $image->resize($maxWidth, $maxHeight, function ($constraint) {
+        $image->resize(1200, 1600, function ($constraint) {
             $constraint->aspectRatio();
-            $constraint->upsize(); // Don't upsize smaller images
+            $constraint->upsize();
         });
+        Storage::put($paths['original'], (string) $image->encode(new JpegEncoder(85)));
 
-        // Convert to JPEG for consistency and smaller file size
-        $image->toJpeg(85); // 85% quality
+        // Medium
+        $image = $this->imageManager->read($file);
+        $image->resize(600, 800, function ($constraint) {
+            $constraint->aspectRatio();
+            $constraint->upsize();
+        });
+        Storage::put($paths['medium'], (string) $image->encode(new JpegEncoder(85)));
 
-        // Store the processed image
-        Storage::put($path, (string) $image);
+        // Thumbnail
+        $image = $this->imageManager->read($file);
+        $image->resize(200, 267, function ($constraint) {
+            $constraint->aspectRatio();
+            $constraint->upsize();
+        });
+        Storage::put($paths['thumbnail'], (string) $image->encode(new JpegEncoder(85)));
+
+        // Large
+        $image = $this->imageManager->read($file);
+        $image->resize(800, 1067, function ($constraint) {
+            $constraint->aspectRatio();
+            $constraint->upsize();
+        });
+        Storage::put($paths['large'], (string) $image->encode(new JpegEncoder(85)));
+
+        // Get dimensions from full size
+        $dimensions = getimagesize(Storage::path($paths['original']));
+        $width = $dimensions[0] ?? null;
+        $height = $dimensions[1] ?? null;
+
+        $paths['width'] = $width;
+        $paths['height'] = $height;
+        return $paths;
     }
 }

@@ -28,7 +28,7 @@ class UserProfileFactory extends Factory
             'diet' => 'vegetarian',
             'smoking' => 'never',
             'drinking' => 'never',
-            'marital_status' => $this->faker->randomElement(['single', 'married', 'divorced', 'widowed', 'separated']),
+            'marital_status' => $this->faker->randomElement(['never_married', 'divorced', 'widowed', 'separated']),
             'profile_verified' => false,
             'income_verified' => false,
             'education_verified' => false,

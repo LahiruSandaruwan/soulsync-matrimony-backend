@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class SubscriptionController extends Controller
@@ -344,7 +345,7 @@ class SubscriptionController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'subscriptions' => $subscriptions,
+                    'data' => $subscriptions,
                     'pagination' => [
                         'current_page' => $page,
                         'total_subscriptions' => $totalCount,
@@ -549,7 +550,7 @@ class SubscriptionController extends Controller
      */
     private function processStripePayment(array $pricing, string $token, User $user): array
     {
-        $stripeService = new \App\Services\Payment\StripePaymentService();
+        $stripeService = app(\App\Services\Payment\StripePaymentService::class);
         
         return $stripeService->processPayment($pricing, $token, $user, [
             'plan_type' => request('plan_type'),
@@ -615,6 +616,272 @@ class SubscriptionController extends Controller
                 'error' => $result['error']
             ];
         }
+    }
+
+    /**
+     * Get subscription features
+     */
+    public function features(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $subscription = $user->activeSubscription;
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'plan_type' => 'free',
+                    'features' => $this->getFreeFeatures(),
+                    'limits' => [
+                        'daily_likes' => 5,
+                        'daily_matches' => 5,
+                        'super_likes' => 0,
+                        'profile_views' => false,
+                        'advanced_search' => false,
+                    ]
+                ]
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'plan_type' => $subscription->plan_type,
+                'features' => $this->getPremiumFeatures($subscription->plan_type),
+                'limits' => $this->getPlanLimits($subscription->plan_type),
+            ]
+        ]);
+    }
+
+    /**
+     * Reactivate cancelled subscription
+     */
+    public function reactivate(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $subscription = $user->subscriptions()
+            ->where('status', 'cancelled')
+            ->latest()
+            ->first();
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No cancelled subscription found'
+            ], 404);
+        }
+
+        $subscription->update([
+            'status' => 'active',
+            'cancelled_at' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Subscription reactivated successfully'
+        ]);
+    }
+
+    /**
+     * Upgrade subscription
+     */
+    public function upgrade(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'plan_type' => 'required|in:basic,premium,platinum',
+            'payment_token' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = $request->user();
+        $currentSubscription = $user->activeSubscription;
+
+        if (!$currentSubscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active subscription to upgrade'
+            ], 400);
+        }
+
+        // Create new subscription with upgrade
+        $result = $this->subscribe($request);
+
+        if ($result->getStatusCode() === 201) {
+            // Cancel old subscription
+            $currentSubscription->update(['status' => 'cancelled']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Subscription upgraded successfully'
+            ]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Downgrade subscription
+     */
+    public function downgrade(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'plan_type' => 'required|in:basic,premium,platinum',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = $request->user();
+        $subscription = $user->activeSubscription;
+
+        if (!$subscription) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active subscription found'
+            ], 404);
+        }
+
+        $subscription->update([
+            'downgrade_to' => $request->plan_type,
+            'downgrade_at' => $subscription->expires_at,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Subscription will be downgraded at the end of the current period'
+        ]);
+    }
+
+    /**
+     * Start free trial
+     */
+    public function startTrial(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'plan_type' => 'required|in:basic,premium,platinum',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = $request->user();
+
+        // Check if user has already used trial
+        if ($user->trial_used) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You have already used your free trial'
+            ], 400);
+        }
+
+        // Create trial subscription
+        $subscription = Subscription::create([
+            'user_id' => $user->id,
+            'plan_type' => $request->plan_type,
+            'status' => 'active',
+            'starts_at' => now(),
+            'expires_at' => now()->addDays(7), // 7-day trial
+            'amount_usd' => 0,
+            'amount_local' => 0,
+            'local_currency' => $user->country_code === 'LK' ? 'LKR' : 'USD',
+            'payment_method' => 'trial',
+            'auto_renewal' => false,
+            'is_trial' => true,
+        ]);
+
+        $user->update(['trial_used' => true, 'is_premium' => true]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Free trial started successfully',
+            'data' => [
+                'subscription' => $subscription,
+                'expires_at' => $subscription->expires_at,
+            ]
+        ], 201);
+    }
+
+    /**
+     * Process subscription renewals
+     */
+    public function processRenewals(): JsonResponse
+    {
+        $expiredSubscriptions = Subscription::where('status', 'active')
+            ->where('expires_at', '<', now())
+            ->where('auto_renewal', true)
+            ->get();
+
+        $renewedCount = 0;
+
+        foreach ($expiredSubscriptions as $subscription) {
+            // Process renewal logic here
+            $subscription->update([
+                'starts_at' => now(),
+                'expires_at' => now()->addDays(30),
+            ]);
+            $renewedCount++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Processed {$renewedCount} renewals"
+        ]);
+    }
+
+    /**
+     * Get plan limits
+     */
+    private function getPlanLimits(string $planType): array
+    {
+        $limits = [
+            'free' => [
+                'daily_likes' => 5,
+                'daily_matches' => 5,
+                'super_likes' => 0,
+                'profile_views' => false,
+                'advanced_search' => false,
+            ],
+            'basic' => [
+                'daily_likes' => 25,
+                'daily_matches' => 25,
+                'super_likes' => 3,
+                'profile_views' => true,
+                'advanced_search' => true,
+            ],
+            'premium' => [
+                'daily_likes' => 100,
+                'daily_matches' => 100,
+                'super_likes' => 10,
+                'profile_views' => true,
+                'advanced_search' => true,
+            ],
+            'platinum' => [
+                'daily_likes' => 'unlimited',
+                'daily_matches' => 'unlimited',
+                'super_likes' => 25,
+                'profile_views' => true,
+                'advanced_search' => true,
+            ],
+        ];
+
+        return $limits[$planType] ?? $limits['free'];
     }
 
     /**

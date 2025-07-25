@@ -221,14 +221,12 @@ class MatchingServiceTest extends TestCase
             'user_id' => $user1->id,
             'moon_sign' => 'aries',
             'nakshatra' => 'ashwini',
-            'rashi' => 'mesha',
         ]);
 
         $horoscope2 = Horoscope::factory()->create([
             'user_id' => $user2->id,
             'moon_sign' => 'leo',
             'nakshatra' => 'magha',
-            'rashi' => 'simha',
         ]);
 
         $score = $this->matchingService->calculateHoroscopeCompatibility($user1, $user2);
@@ -336,8 +334,8 @@ class MatchingServiceTest extends TestCase
 
         $matches = $this->matchingService->generateDailyMatches($user, 3);
 
-        $this->assertIsArray($matches);
-        $this->assertLessThanOrEqual(3, count($matches));
+        $this->assertInstanceOf(\Illuminate\Support\Collection::class, $matches);
+        $this->assertLessThanOrEqual(3, $matches->count());
         
         foreach ($matches as $match) {
             $this->assertArrayHasKey('user', $match);

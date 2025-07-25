@@ -34,6 +34,9 @@ class AuthenticationTest extends TestCase
 
         $response = $this->postJson('/api/v1/auth/register', $userData);
 
+        if ($response->status() !== 201) {
+            dump($response->json());
+        }
         $response->assertStatus(201)
                  ->assertJsonStructure([
                      'success',

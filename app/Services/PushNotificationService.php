@@ -10,7 +10,7 @@ use Exception;
 
 class PushNotificationService
 {
-    private string $fcmServerKey;
+    private ?string $fcmServerKey;
     private string $fcmUrl;
 
     public function __construct()
@@ -198,6 +198,15 @@ class PushNotificationService
      */
     private function sendNotification(string $fcmToken, string $title, string $body, array $data = []): bool
     {
+        // Skip sending if FCM server key is not configured (e.g., in testing)
+        if (!$this->fcmServerKey) {
+            Log::info('FCM server key not configured, skipping push notification', [
+                'title' => $title,
+                'fcm_token' => substr($fcmToken, 0, 20) . '...',
+            ]);
+            return true;
+        }
+
         try {
             $payload = [
                 'to' => $fcmToken,

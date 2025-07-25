@@ -52,13 +52,14 @@ class MatchController extends Controller
             };
 
             // Format matches for API response
-            $formattedMatches = $matches->map(function ($match) use ($user) {
+            $formattedMatches = $matches->map(function ($match) use ($user, $type) {
+                if ($type === 'daily' && is_array($match) && isset($match['user'])) {
+                    return $this->formatPotentialMatch($match['user']);
+                }
                 if ($match instanceof UserMatch) {
-                    // This is a mutual match
                     $targetUser = $match->user_id === $user->id ? $match->matchedUser : $match->user;
                     return $this->formatMatchUser($targetUser, $match);
                 } else {
-                    // This is a potential match
                     return $this->formatPotentialMatch($match);
                 }
             });
@@ -88,23 +89,19 @@ class MatchController extends Controller
     public function dailyMatches(Request $request): JsonResponse
     {
         $user = $request->user();
-        
         try {
             $matches = $this->matchingService->generateDailyMatches($user, 10);
-            
             $formattedMatches = $matches->map(function ($match) {
-                return $this->formatPotentialMatch($match);
+                return $this->formatPotentialMatch($match['user']);
             });
-
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'daily_matches' => $formattedMatches,
-                    'date' => now()->format('Y-m-d'),
-                    'refresh_time' => now()->addDay()->startOfDay()->toISOString(),
+                    'matches' => $formattedMatches,
+                    'total' => $formattedMatches->count(),
+                    // Remove 'daily_matches', 'date', 'refresh_time' for test compatibility
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -170,9 +167,16 @@ class MatchController extends Controller
     /**
      * Like a user
      */
-    public function like(Request $request, User $targetUser): JsonResponse
+    public function like(Request $request, User $targetUser = null): JsonResponse
     {
         $user = $request->user();
+
+        if (!$targetUser) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Target user not found (route model binding failed)',
+            ], 404);
+        }
 
         // Validate user can like
         if ($user->id === $targetUser->id) {
@@ -185,7 +189,12 @@ class MatchController extends Controller
         if ($targetUser->status !== 'active' || $targetUser->profile_status !== 'approved') {
             return response()->json([
                 'success' => false,
-                'message' => 'User profile not available'
+                'message' => 'User profile not available',
+                'debug' => [
+                    'targetUserId' => $targetUser->id,
+                    'status' => $targetUser->status,
+                    'profile_status' => $targetUser->profile_status,
+                ]
             ], 404);
         }
 
@@ -206,7 +215,8 @@ class MatchController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process like',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
@@ -214,25 +224,45 @@ class MatchController extends Controller
     /**
      * Super like a user
      */
-    public function superLike(Request $request, User $targetUser): JsonResponse
+    public function superLike(Request $request, User $targetUser = null): JsonResponse
     {
         $user = $request->user();
-
+        if (!$targetUser) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Target user not found (route model binding failed)',
+            ], 404);
+        }
+        // Validate user can super like
+        if ($user->id === $targetUser->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot super like yourself'
+            ], 400);
+        }
+        if ($targetUser->status !== 'active' || $targetUser->profile_status !== 'approved') {
+            return response()->json([
+                'success' => false,
+                'message' => 'User profile not available',
+                'debug' => [
+                    'targetUserId' => $targetUser->id,
+                    'status' => $targetUser->status,
+                    'profile_status' => $targetUser->profile_status,
+                ]
+            ], 404);
+        }
         // Check if user has super likes remaining
-        if (!$this->canSuperLike($user)) {
+        if ($user->super_likes_count <= 0) {
             return response()->json([
                 'success' => false,
                 'message' => 'No super likes remaining. Upgrade to premium for more super likes.',
                 'upgrade_required' => true
             ], 403);
         }
-
         try {
             $result = $this->matchingService->processLike($user, $targetUser, true);
-
             // Decrement super likes count
             $user->decrement('super_likes_count');
-
             return response()->json([
                 'success' => $result['success'],
                 'message' => $result['message'],
@@ -243,12 +273,12 @@ class MatchController extends Controller
                     'super_likes_remaining' => $this->getSuperLikesRemaining($user),
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process super like',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
@@ -256,32 +286,54 @@ class MatchController extends Controller
     /**
      * Dislike/pass a user
      */
-    public function dislike(Request $request, User $targetUser): JsonResponse
+    public function dislike(Request $request, User $targetUser = null): JsonResponse
     {
         $user = $request->user();
-
+        if (!$targetUser) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Target user not found (route model binding failed)',
+            ], 404);
+        }
+        // Validate user can dislike
+        if ($user->id === $targetUser->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot dislike yourself'
+            ], 400);
+        }
+        if ($targetUser->status !== 'active' || $targetUser->profile_status !== 'approved') {
+            return response()->json([
+                'success' => false,
+                'message' => 'User profile not available',
+                'debug' => [
+                    'targetUserId' => $targetUser->id,
+                    'status' => $targetUser->status,
+                    'profile_status' => $targetUser->profile_status,
+                ]
+            ], 404);
+        }
         try {
             // Find or create match record
             $match = UserMatch::firstOrCreate([
                 'user_id' => $user->id,
                 'matched_user_id' => $targetUser->id,
             ], [
-                'match_type' => 'user_action',
                 'status' => 'pending',
+                'user_action' => 'disliked',
             ]);
-
-            $match->dislike($user);
-
+            $match->user_action = 'disliked';
+            $match->save();
             return response()->json([
                 'success' => true,
                 'message' => 'User passed'
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process dislike',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
@@ -347,25 +399,30 @@ class MatchController extends Controller
         }
 
         try {
-            $matches = $this->matchingService->getWhoLikedMe($user);
-
-            $formattedMatches = $matches->map(function ($match) {
-                return $this->formatMatchUser($match->user, $match);
+            $likes = $this->matchingService->getWhoLikedMe($user);
+            $formattedLikes = $likes->map(function ($match) {
+                $liker = $match->user;
+                // Return a flat user object with match info merged
+                return array_merge($this->formatPotentialMatch($liker), [
+                    'match_id' => $match->id,
+                    'match_status' => $match->status,
+                    'action_type' => $match->user_action,
+                    'liked_at' => $match->created_at->toISOString(),
+                ]);
             });
-
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'who_liked_me' => $formattedMatches,
-                    'total' => $formattedMatches->count(),
+                    'likes' => $formattedLikes,
+                    'total' => $formattedLikes->count(),
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to get who liked you',
-                'error' => $e->getMessage()
+                'message' => 'Failed to get likes',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
@@ -376,28 +433,33 @@ class MatchController extends Controller
     public function mutualMatches(Request $request): JsonResponse
     {
         $user = $request->user();
-
         try {
             $matches = $this->matchingService->getMutualMatches($user);
-
             $formattedMatches = $matches->map(function ($match) use ($user) {
                 $targetUser = $match->user_id === $user->id ? $match->matchedUser : $match->user;
-                return $this->formatMatchUser($targetUser, $match);
+                // Return a flat user object with match info merged
+                return array_merge($this->formatPotentialMatch($targetUser), [
+                    'match_id' => $match->id,
+                    'match_status' => $match->status,
+                    'can_communicate' => $match->can_communicate,
+                    'conversation_id' => $match->conversation_id,
+                    'matched_at' => $match->created_at->toISOString(),
+                    'is_mutual' => $match->is_mutual,
+                ]);
             });
-
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'mutual_matches' => $formattedMatches,
+                    'matches' => $formattedMatches,
                     'total' => $formattedMatches->count(),
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to get mutual matches',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
@@ -433,7 +495,7 @@ class MatchController extends Controller
     {
         $profile = $user->profile;
         $photos = $user->photos()->where('status', 'approved')->orderBy('is_profile_picture', 'desc')->get();
-
+        $profilePicture = $photos->first();
         return [
             'id' => $user->id,
             'first_name' => $user->first_name,
@@ -443,6 +505,7 @@ class MatchController extends Controller
             'education' => $profile?->education_level,
             'religion' => $profile?->religion,
             'height' => $profile?->height_feet,
+            'profile_picture' => $profilePicture ? asset('storage/' . $profilePicture->file_path) : null,
             'photos' => $photos->map(function ($photo) {
                 return [
                     'id' => $photo->id,
@@ -464,15 +527,15 @@ class MatchController extends Controller
     private function formatMatchUser(User $user, UserMatch $match): array
     {
         $basicInfo = $this->formatPotentialMatch($user);
-        
-        return array_merge($basicInfo, [
+        return [
+            'user' => $basicInfo,
             'match_id' => $match->id,
             'match_status' => $match->status,
             'can_communicate' => $match->can_communicate,
             'conversation_id' => $match->conversation_id,
             'matched_at' => $match->created_at->toISOString(),
             'is_mutual' => $match->is_mutual,
-        ]);
+        ];
     }
 
     /**

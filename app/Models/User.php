@@ -12,10 +12,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Auth\Passwords\CanResetPassword;
 
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable implements MustVerifyEmail, \Illuminate\Contracts\Auth\CanResetPassword
 {
-    use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasApiTokens, HasFactory, Notifiable, HasRoles, CanResetPassword;
 
     /**
      * The attributes that are mass assignable.
@@ -83,6 +84,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'preferred_min_age',
         'preferred_max_age',
         'preferred_distance_km',
+        'trial_used',
     ];
 
     /**
@@ -134,6 +136,14 @@ class User extends Authenticatable implements MustVerifyEmail
             'premium_features_used' => 'array',
             'last_boost_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Send the password reset notification.
+     */
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new \Illuminate\Auth\Notifications\ResetPassword($token));
     }
 
     // Relationships
@@ -200,6 +210,15 @@ class User extends Authenticatable implements MustVerifyEmail
     public function receivedMatches(): HasMany
     {
         return $this->hasMany(UserMatch::class, 'matched_user_id');
+    }
+
+    /**
+     * Get all matches for the user (as sender or receiver).
+     */
+    public function matches()
+    {
+        return $this->hasMany(UserMatch::class, 'user_id')
+            ->orWhere('matched_user_id', $this->id);
     }
 
     /**
@@ -352,5 +371,21 @@ class User extends Authenticatable implements MustVerifyEmail
     public function scopeByCountry($query, $countryCode)
     {
         return $query->where('country_code', $countryCode);
+    }
+
+    /**
+     * Use 'id' for route model binding and allow all users to be resolved.
+     */
+    public function getRouteKeyName()
+    {
+        return 'id';
+    }
+
+    public function resolveRouteBinding(
+        $value,
+        $field = null
+    ) {
+        // Always resolve by id, do not filter by status/profile_status
+        return $this->where($field ?? $this->getRouteKeyName(), $value)->first();
     }
 }

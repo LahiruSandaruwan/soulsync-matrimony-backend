@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\Admin\ReportController;
 use App\Http\Controllers\Api\Admin\ContentController;
 use App\Http\Controllers\Api\Admin\SettingsController as AdminSettingsController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Models\User;
 
 /*
 |--------------------------------------------------------------------------
@@ -38,6 +39,9 @@ use App\Http\Controllers\Api\WebhookController;
 | be assigned to the "api" middleware group. Make something great!
 |
 */
+
+// Explicit model binding for user
+Route::model('user', User::class);
 
 // Public routes (no authentication required)
 Route::prefix('v1')->group(function () {
@@ -60,6 +64,9 @@ Route::prefix('v1')->group(function () {
         Route::get('subscription-plans', [SubscriptionController::class, 'plans']);
     });
     
+    // Public subscription plans route
+    Route::get('subscription/plans', [SubscriptionController::class, 'plans']);
+    
     // Health check
     Route::get('health', function () {
         return response()->json([
@@ -81,6 +88,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('logout-all', [AuthController::class, 'logoutAll']);
         Route::post('change-password', [AuthController::class, 'changePassword']);
         Route::post('verify-email', [AuthController::class, 'verifyEmail']);
+        Route::delete('delete-account', [AuthController::class, 'deleteAccount']);
     });
     
     // Profile management
@@ -182,8 +190,15 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::prefix('subscription')->group(function () {
         Route::get('/', [SubscriptionController::class, 'current']);
         Route::get('plans', [SubscriptionController::class, 'plans']);
+        Route::get('status', [SubscriptionController::class, 'current']);
+        Route::get('features', [SubscriptionController::class, 'features']);
         Route::post('subscribe', [SubscriptionController::class, 'subscribe']);
         Route::post('cancel', [SubscriptionController::class, 'cancel']);
+        Route::post('reactivate', [SubscriptionController::class, 'reactivate']);
+        Route::post('upgrade', [SubscriptionController::class, 'upgrade']);
+        Route::post('downgrade', [SubscriptionController::class, 'downgrade']);
+        Route::post('start-trial', [SubscriptionController::class, 'startTrial']);
+        Route::post('process-renewals', [SubscriptionController::class, 'processRenewals']);
         Route::get('history', [SubscriptionController::class, 'history']);
         Route::post('payment/verify', [SubscriptionController::class, 'verifyPayment']);
     });

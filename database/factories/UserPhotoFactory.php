@@ -28,7 +28,7 @@ class UserPhotoFactory extends Factory
             'original_filename' => $this->faker->word() . '.jpg',
             'is_profile_picture' => false,
             'is_private' => false,
-            'status' => $this->faker->randomElement(['pending_approval', 'approved', 'rejected']),
+            'status' => $this->faker->randomElement(['pending', 'approved', 'rejected', 'flagged']),
             'admin_notes' => null,
             'upload_ip' => $this->faker->ipv4(),
             'exif_data' => json_encode([
@@ -64,7 +64,7 @@ class UserPhotoFactory extends Factory
     public function pending(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => 'pending_approval',
+            'status' => 'pending',
         ]);
     }
 

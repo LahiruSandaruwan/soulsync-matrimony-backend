@@ -44,6 +44,12 @@ class ProfileController extends Controller
                 $this->recordProfileView($currentUser, $user);
             }
 
+            // Ensure completion percentage is up to date
+            if ($user->profile) {
+                $user->profile_completion_percentage = $user->profile->calculateCompletionPercentage();
+                $user->save();
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -478,6 +484,81 @@ class ProfileController extends Controller
         }
     }
 
+    /**
+     * Get profile completion status
+     */
+    public function completionStatus(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $profile = $user->profile;
+        $preferences = $user->preferences;
+
+        $completionPercentage = $profile ? $profile->calculateCompletionPercentage() : 0;
+        $completedSections = [
+            'profile' => $profile ? $completionPercentage >= 80 : false,
+            'preferences' => $preferences ? $preferences->areComplete() : false,
+            'photo' => $user->photos()->where('is_profile_picture', true)->exists(),
+        ];
+        $missingSections = [];
+        if (!$completedSections['profile']) $missingSections[] = 'profile';
+        if (!$completedSections['preferences']) $missingSections[] = 'preferences';
+        if (!$completedSections['photo']) $missingSections[] = 'photo';
+        $nextSteps = $missingSections;
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'completion_percentage' => $completionPercentage,
+                'completed_sections' => $completedSections,
+                'missing_sections' => $missingSections,
+                'next_steps' => $nextSteps,
+            ]
+        ]);
+    }
+
+    /**
+     * Complete profile setup (profile + preferences)
+     */
+    public function complete(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $profileData = $request->input('profile', []);
+        $preferenceData = $request->input('preferences', []);
+
+        DB::beginTransaction();
+        try {
+            // Update or create profile
+            if (!empty($profileData)) {
+                $profile = $user->profile ?: $user->profile()->create([]);
+                $profile->fill($profileData);
+                $profile->save();
+                $user->profile_completion_percentage = $profile->calculateCompletionPercentage();
+            }
+            // Update or create preferences
+            if (!empty($preferenceData)) {
+                $preferences = $user->preferences ?: $user->preferences()->create([]);
+                $preferences->fill($preferenceData);
+                $preferences->save();
+            }
+            $user->save();
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Profile setup completed',
+                'data' => [
+                    'completion_percentage' => $user->profile_completion_percentage,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to complete profile setup',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     // Helper Methods
 
     /**
@@ -508,12 +589,8 @@ class ProfileController extends Controller
      */
     private function recordProfileView(User $viewer, User $profileUser): void
     {
-        // Increment view count
-        $profileUser->increment('profile_views_received');
-        $viewer->increment('profile_views_given');
-        
-        // In a real app, you'd also create a profile_views record
-        // for detailed analytics and visitor tracking
+        // Use the ProfileView model to record the view
+        \App\Models\ProfileView::recordView($profileUser, $viewer);
     }
 
     /**
@@ -599,6 +676,8 @@ class ProfileController extends Controller
             'id' => $user->id,
             'first_name' => $user->first_name,
             'last_name' => $user->last_name,
+            'email' => $user->email,
+            'phone' => $user->phone,
             'age' => $user->age,
             'gender' => $user->gender,
             'country_code' => $user->country_code,
