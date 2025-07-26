@@ -4,25 +4,617 @@ namespace App\Services\Payment;
 
 use App\Models\Subscription;
 use App\Models\User;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Exception;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cache;
 
 class PayPalPaymentService
 {
-    private string $baseUrl;
     private string $clientId;
     private string $clientSecret;
-    private ?string $accessToken = null;
+    private string $webhookId;
+    private string $baseUrl;
+    private string $accessToken;
 
     public function __construct()
     {
-        $this->baseUrl = config('services.paypal.sandbox') ? 
-            'https://api.sandbox.paypal.com' : 
-            'https://api.paypal.com';
-        
         $this->clientId = config('services.paypal.client_id');
         $this->clientSecret = config('services.paypal.client_secret');
+        $this->webhookId = config('services.paypal.webhook_id');
+        $this->baseUrl = config('app.env') === 'production' 
+            ? 'https://api-m.paypal.com' 
+            : 'https://api-m.sandbox.paypal.com';
+        
+        $this->accessToken = $this->getAccessToken();
+    }
+
+    /**
+     * Create a PayPal order
+     */
+    public function createOrder(User $user, array $subscriptionData): array
+    {
+        try {
+            // Validate subscription data
+            $validator = Validator::make($subscriptionData, [
+                'plan_id' => 'required|string',
+                'amount' => 'required|numeric|min:0.01',
+                'currency' => 'required|string|size:3',
+                'description' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                throw new \InvalidArgumentException('Invalid subscription data: ' . $validator->errors()->first());
+            }
+
+            $orderData = [
+                'intent' => 'CAPTURE',
+                'application_context' => [
+                    'return_url' => config('app.url') . '/payment/paypal/success',
+                    'cancel_url' => config('app.url') . '/payment/paypal/cancel',
+                    'brand_name' => config('app.name'),
+                    'landing_page' => 'BILLING',
+                    'user_action' => 'PAY_NOW',
+                    'shipping_preference' => 'NO_SHIPPING',
+                ],
+                'purchase_units' => [
+                    [
+                        'reference_id' => 'subscription_' . $user->id . '_' . time(),
+                        'description' => $subscriptionData['description'],
+                        'custom_id' => $user->id,
+                        'invoice_id' => 'INV-' . $user->id . '-' . time(),
+                        'amount' => [
+                            'currency_code' => strtoupper($subscriptionData['currency']),
+                            'value' => number_format($subscriptionData['amount'], 2, '.', ''),
+                        ],
+                        'items' => [
+                            [
+                                'name' => $subscriptionData['description'],
+                                'unit_amount' => [
+                                    'currency_code' => strtoupper($subscriptionData['currency']),
+                                    'value' => number_format($subscriptionData['amount'], 2, '.', ''),
+                                ],
+                                'quantity' => '1',
+                                'category' => 'DIGITAL_GOODS',
+                            ],
+                        ],
+                    ],
+                ],
+            ];
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->accessToken,
+                'Content-Type' => 'application/json',
+                'Prefer' => 'return=representation',
+            ])->post($this->baseUrl . '/v2/checkout/orders', $orderData);
+
+            if (!$response->successful()) {
+                $error = $response->json();
+                Log::error('PayPal order creation failed', [
+                    'user_id' => $user->id,
+                    'error' => $error,
+                    'status_code' => $response->status(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'error' => $this->getUserFriendlyError($error),
+                ];
+            }
+
+            $order = $response->json();
+
+            Log::info('PayPal order created', [
+                'user_id' => $user->id,
+                'order_id' => $order['id'],
+                'amount' => $subscriptionData['amount'],
+                'currency' => $subscriptionData['currency'],
+            ]);
+
+            return [
+                'success' => true,
+                'order_id' => $order['id'],
+                'approval_url' => $order['links'][1]['href'] ?? null,
+                'status' => $order['status'],
+                'amount' => $subscriptionData['amount'],
+                'currency' => $subscriptionData['currency'],
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error creating PayPal order', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Payment processing failed. Please try again.',
+            ];
+        }
+    }
+
+    /**
+     * Capture a PayPal order
+     */
+    public function captureOrder(string $orderId): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->accessToken,
+                'Content-Type' => 'application/json',
+                'Prefer' => 'return=representation',
+            ])->post($this->baseUrl . "/v2/checkout/orders/{$orderId}/capture");
+
+            if (!$response->successful()) {
+                $error = $response->json();
+                Log::error('PayPal order capture failed', [
+                    'order_id' => $orderId,
+                    'error' => $error,
+                    'status_code' => $response->status(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'error' => $this->getUserFriendlyError($error),
+                ];
+            }
+
+            $capture = $response->json();
+
+            Log::info('PayPal order captured', [
+                'order_id' => $orderId,
+                'capture_id' => $capture['purchase_units'][0]['payments']['captures'][0]['id'],
+                'status' => $capture['status'],
+            ]);
+
+            return [
+                'success' => true,
+                'capture_id' => $capture['purchase_units'][0]['payments']['captures'][0]['id'],
+                'status' => $capture['status'],
+                'amount' => $capture['purchase_units'][0]['payments']['captures'][0]['amount']['value'],
+                'currency' => $capture['purchase_units'][0]['payments']['captures'][0]['amount']['currency_code'],
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error capturing PayPal order', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Payment capture failed. Please try again.',
+            ];
+        }
+    }
+
+    /**
+     * Create a PayPal subscription
+     */
+    public function createSubscription(User $user, array $subscriptionData): array
+    {
+        try {
+            // Validate subscription data
+            $validator = Validator::make($subscriptionData, [
+                'plan_id' => 'required|string',
+                'start_time' => 'required|date',
+                'quantity' => 'nullable|integer|min:1',
+            ]);
+
+            if ($validator->fails()) {
+                throw new \InvalidArgumentException('Invalid subscription data: ' . $validator->errors()->first());
+            }
+
+            $subscriptionData = [
+                'plan_id' => $subscriptionData['plan_id'],
+                'start_time' => $subscriptionData['start_time'],
+                'quantity' => $subscriptionData['quantity'] ?? 1,
+                'subscriber' => [
+                    'name' => [
+                        'given_name' => $user->first_name,
+                        'surname' => $user->last_name,
+                    ],
+                    'email_address' => $user->email,
+                ],
+                'application_context' => [
+                    'brand_name' => config('app.name'),
+                    'locale' => 'en-US',
+                    'shipping_preference' => 'NO_SHIPPING',
+                    'user_action' => 'SUBSCRIBE_NOW',
+                    'payment_method' => [
+                        'payer_selected' => 'PAYPAL',
+                        'payee_preferred' => 'IMMEDIATE_PAYMENT_REQUIRED',
+                    ],
+                    'return_url' => config('app.url') . '/subscription/paypal/success',
+                    'cancel_url' => config('app.url') . '/subscription/paypal/cancel',
+                ],
+                'custom_id' => $user->id,
+            ];
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->accessToken,
+                'Content-Type' => 'application/json',
+                'Prefer' => 'return=representation',
+            ])->post($this->baseUrl . '/v1/billing/subscriptions', $subscriptionData);
+
+            if (!$response->successful()) {
+                $error = $response->json();
+                Log::error('PayPal subscription creation failed', [
+                    'user_id' => $user->id,
+                    'error' => $error,
+                    'status_code' => $response->status(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'error' => $this->getUserFriendlyError($error),
+                ];
+            }
+
+            $subscription = $response->json();
+
+            Log::info('PayPal subscription created', [
+                'user_id' => $user->id,
+                'subscription_id' => $subscription['id'],
+                'plan_id' => $subscriptionData['plan_id'],
+            ]);
+
+            return [
+                'success' => true,
+                'subscription_id' => $subscription['id'],
+                'approval_url' => $subscription['links'][0]['href'] ?? null,
+                'status' => $subscription['status'],
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error creating PayPal subscription', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Subscription creation failed. Please try again.',
+            ];
+        }
+    }
+
+    /**
+     * Verify webhook signature and process events
+     */
+    public function processWebhook(Request $request): array
+    {
+        try {
+            $payload = $request->getContent();
+            $headers = $request->headers->all();
+
+            // Verify webhook signature
+            if (!$this->verifyWebhookSignature($payload, $headers)) {
+                Log::error('PayPal webhook signature verification failed');
+                return ['success' => false, 'error' => 'Invalid signature'];
+            }
+
+            $event = json_decode($payload, true);
+
+            Log::info('PayPal webhook received', [
+                'event_type' => $event['event_type'] ?? 'unknown',
+                'resource_type' => $event['resource_type'] ?? 'unknown',
+            ]);
+
+            // Process the event
+            switch ($event['event_type']) {
+                case 'PAYMENT.CAPTURE.COMPLETED':
+                    return $this->handlePaymentCaptureCompleted($event['resource']);
+                
+                case 'PAYMENT.CAPTURE.DENIED':
+                    return $this->handlePaymentCaptureDenied($event['resource']);
+                
+                case 'BILLING.SUBSCRIPTION.CREATED':
+                    return $this->handleSubscriptionCreated($event['resource']);
+                
+                case 'BILLING.SUBSCRIPTION.ACTIVATED':
+                    return $this->handleSubscriptionActivated($event['resource']);
+                
+                case 'BILLING.SUBSCRIPTION.CANCELLED':
+                    return $this->handleSubscriptionCancelled($event['resource']);
+                
+                case 'BILLING.SUBSCRIPTION.EXPIRED':
+                    return $this->handleSubscriptionExpired($event['resource']);
+                
+                case 'BILLING.SUBSCRIPTION.PAYMENT.COMPLETED':
+                    return $this->handleSubscriptionPaymentCompleted($event['resource']);
+                
+                case 'BILLING.SUBSCRIPTION.PAYMENT.FAILED':
+                    return $this->handleSubscriptionPaymentFailed($event['resource']);
+                
+                default:
+                    Log::info('Unhandled PayPal webhook event', ['event_type' => $event['event_type']]);
+                    return ['success' => true, 'message' => 'Event ignored'];
+            }
+
+        } catch (\Exception $e) {
+            Log::error('PayPal webhook processing error', [
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Webhook processing failed'];
+        }
+    }
+
+    /**
+     * Handle successful payment capture
+     */
+    private function handlePaymentCaptureCompleted($resource): array
+    {
+        try {
+            $customId = $resource['custom_id'] ?? null;
+            $captureId = $resource['id'];
+            $amount = $resource['amount']['value'];
+            $currency = $resource['amount']['currency_code'];
+
+            if ($customId) {
+                $user = User::find($customId);
+                if ($user) {
+                    // Update user subscription or create new one
+                    $subscription = $user->subscriptions()->where('paypal_capture_id', $captureId)->first();
+                    if ($subscription) {
+                        $subscription->update([
+                            'status' => 'active',
+                            'paid_at' => now(),
+                        ]);
+                    }
+
+                    Log::info('PayPal payment capture completed', [
+                        'user_id' => $customId,
+                        'capture_id' => $captureId,
+                        'amount' => $amount,
+                        'currency' => $currency,
+                    ]);
+                }
+            }
+
+            return ['success' => true, 'message' => 'Payment processed successfully'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal payment capture completed', [
+                'capture_id' => $resource['id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Payment processing failed'];
+        }
+    }
+
+    /**
+     * Handle denied payment capture
+     */
+    private function handlePaymentCaptureDenied($resource): array
+    {
+        try {
+            $customId = $resource['custom_id'] ?? null;
+            $captureId = $resource['id'];
+
+            if ($customId) {
+                $user = User::find($customId);
+                if ($user) {
+                    $subscription = $user->subscriptions()->where('paypal_capture_id', $captureId)->first();
+                    if ($subscription) {
+                        $subscription->update([
+                            'status' => 'failed',
+                        ]);
+                    }
+                }
+            }
+
+            Log::warning('PayPal payment capture denied', [
+                'capture_id' => $captureId,
+                'user_id' => $customId,
+            ]);
+
+            return ['success' => true, 'message' => 'Payment denial recorded'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal payment capture denied', [
+                'capture_id' => $resource['id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Payment denial processing failed'];
+        }
+    }
+
+    /**
+     * Handle subscription created
+     */
+    private function handleSubscriptionCreated($resource): array
+    {
+        try {
+            $customId = $resource['custom_id'] ?? null;
+            $subscriptionId = $resource['id'];
+            $planId = $resource['plan_id'];
+
+            if ($customId) {
+                $user = User::find($customId);
+                if ($user) {
+                    Subscription::create([
+                        'user_id' => $user->id,
+                        'paypal_subscription_id' => $subscriptionId,
+                        'plan_id' => $planId,
+                        'status' => $resource['status'],
+                        'start_time' => $resource['start_time'],
+                        'next_billing_time' => $resource['next_billing_time'] ?? null,
+                    ]);
+
+                    Log::info('PayPal subscription created', [
+                        'user_id' => $customId,
+                        'subscription_id' => $subscriptionId,
+                    ]);
+                }
+            }
+
+            return ['success' => true, 'message' => 'Subscription created'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal subscription created', [
+                'subscription_id' => $resource['id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Subscription creation failed'];
+        }
+    }
+
+    /**
+     * Handle subscription activated
+     */
+    private function handleSubscriptionActivated($resource): array
+    {
+        try {
+            $subscriptionId = $resource['id'];
+            $subscription = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
+
+            if ($subscription) {
+                $subscription->update([
+                    'status' => 'active',
+                    'activated_at' => now(),
+                ]);
+
+                Log::info('PayPal subscription activated', [
+                    'subscription_id' => $subscription->id,
+                ]);
+            }
+
+            return ['success' => true, 'message' => 'Subscription activated'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal subscription activated', [
+                'subscription_id' => $resource['id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Subscription activation failed'];
+        }
+    }
+
+    /**
+     * Handle subscription cancelled
+     */
+    private function handleSubscriptionCancelled($resource): array
+    {
+        try {
+            $subscriptionId = $resource['id'];
+            $subscription = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
+
+            if ($subscription) {
+                $subscription->update([
+                    'status' => 'cancelled',
+                    'cancelled_at' => now(),
+                ]);
+
+                Log::info('PayPal subscription cancelled', [
+                    'subscription_id' => $subscription->id,
+                ]);
+            }
+
+            return ['success' => true, 'message' => 'Subscription cancelled'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal subscription cancelled', [
+                'subscription_id' => $resource['id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Subscription cancellation failed'];
+        }
+    }
+
+    /**
+     * Handle subscription expired
+     */
+    private function handleSubscriptionExpired($resource): array
+    {
+        try {
+            $subscriptionId = $resource['id'];
+            $subscription = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
+
+            if ($subscription) {
+                $subscription->update([
+                    'status' => 'expired',
+                    'expired_at' => now(),
+                ]);
+
+                Log::info('PayPal subscription expired', [
+                    'subscription_id' => $subscription->id,
+                ]);
+            }
+
+            return ['success' => true, 'message' => 'Subscription expired'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal subscription expired', [
+                'subscription_id' => $resource['id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Subscription expiration failed'];
+        }
+    }
+
+    /**
+     * Handle subscription payment completed
+     */
+    private function handleSubscriptionPaymentCompleted($resource): array
+    {
+        try {
+            $subscriptionId = $resource['billing_agreement_id'];
+            $subscription = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
+
+            if ($subscription) {
+                $subscription->update([
+                    'status' => 'active',
+                    'last_payment_at' => now(),
+                    'next_billing_date' => $resource['next_billing_time'] ?? null,
+                ]);
+
+                Log::info('PayPal subscription payment completed', [
+                    'subscription_id' => $subscription->id,
+                ]);
+            }
+
+            return ['success' => true, 'message' => 'Subscription payment processed'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal subscription payment completed', [
+                'subscription_id' => $resource['billing_agreement_id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Subscription payment processing failed'];
+        }
+    }
+
+    /**
+     * Handle subscription payment failed
+     */
+    private function handleSubscriptionPaymentFailed($resource): array
+    {
+        try {
+            $subscriptionId = $resource['billing_agreement_id'];
+            $subscription = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
+
+            if ($subscription) {
+                $subscription->update([
+                    'status' => 'past_due',
+                    'last_payment_failed_at' => now(),
+                ]);
+
+                Log::warning('PayPal subscription payment failed', [
+                    'subscription_id' => $subscription->id,
+                ]);
+            }
+
+            return ['success' => true, 'message' => 'Subscription payment failure recorded'];
+
+        } catch (\Exception $e) {
+            Log::error('Error handling PayPal subscription payment failed', [
+                'subscription_id' => $resource['billing_agreement_id'],
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'error' => 'Subscription payment failure processing failed'];
+        }
     }
 
     /**
@@ -30,486 +622,256 @@ class PayPalPaymentService
      */
     private function getAccessToken(): string
     {
-        if ($this->accessToken) {
-            return $this->accessToken;
-        }
-
-        try {
-            $response = Http::withBasicAuth($this->clientId, $this->clientSecret)
-                ->asForm()
-                ->post($this->baseUrl . '/v1/oauth2/token', [
-                    'grant_type' => 'client_credentials'
-                ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                $this->accessToken = $data['access_token'];
-                return $this->accessToken;
-            }
-
-            throw new Exception('Failed to get PayPal access token: ' . $response->body());
-        } catch (Exception $e) {
-            Log::error('PayPal access token error', ['error' => $e->getMessage()]);
-            throw $e;
-        }
-    }
-
-    /**
-     * Create PayPal subscription
-     */
-    public function createSubscription(User $user, string $planType, float $amount): array
-    {
-        try {
-            $accessToken = $this->getAccessToken();
-
-            // First create a product if it doesn't exist
-            $productId = $this->createOrGetProduct();
-            
-            // Create a plan
-            $planId = $this->createOrGetPlan($productId, $planType, $amount);
-
-            // Create subscription
-            $subscriptionData = [
-                'plan_id' => $planId,
-                'subscriber' => [
-                    'name' => [
-                        'given_name' => $user->first_name,
-                        'surname' => $user->last_name ?? ''
-                    ],
-                    'email_address' => $user->email
-                ],
-                'application_context' => [
-                    'brand_name' => 'SoulSync',
-                    'locale' => 'en-US',
-                    'shipping_preference' => 'NO_SHIPPING',
-                    'user_action' => 'SUBSCRIBE_NOW',
-                    'payment_method' => [
-                        'payer_selected' => 'PAYPAL',
-                        'payee_preferred' => 'IMMEDIATE_PAYMENT_REQUIRED'
-                    ],
-                    'return_url' => config('app.url') . '/payment/paypal/success',
-                    'cancel_url' => config('app.url') . '/payment/paypal/cancel'
-                ]
-            ];
-
-            $response = Http::withToken($accessToken)
-                ->post($this->baseUrl . '/v1/billing/subscriptions', $subscriptionData);
-
-            if ($response->successful()) {
-                $subscription = $response->json();
-                
-                return [
-                    'success' => true,
-                    'subscription_id' => $subscription['id'],
-                    'approval_url' => $this->getApprovalUrl($subscription['links']),
-                    'paypal_response' => $subscription
-                ];
-            }
-
-            throw new Exception('PayPal subscription creation failed: ' . $response->body());
-
-        } catch (Exception $e) {
-            Log::error('PayPal subscription creation error', [
-                'user_id' => $user->id,
-                'plan_type' => $planType,
-                'error' => $e->getMessage()
-            ]);
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Create or get PayPal product
-     */
-    private function createOrGetProduct(): string
-    {
-        $accessToken = $this->getAccessToken();
-
-        $productData = [
-            'id' => 'SOULSYNC_MATRIMONY',
-            'name' => 'SoulSync Matrimony Platform',
-            'description' => 'Premium matrimony platform subscriptions',
-            'type' => 'SERVICE',
-            'category' => 'SOFTWARE'
-        ];
-
-        $response = Http::withToken($accessToken)
-            ->post($this->baseUrl . '/v1/catalogs/products', $productData);
-
-        if ($response->successful()) {
-            return $productData['id'];
-        }
-
-        // Product might already exist, try to get it
-        $getResponse = Http::withToken($accessToken)
-            ->get($this->baseUrl . '/v1/catalogs/products/' . $productData['id']);
-
-        if ($getResponse->successful()) {
-            return $productData['id'];
-        }
-
-        throw new Exception('Failed to create or get PayPal product');
-    }
-
-    /**
-     * Create or get PayPal plan
-     */
-    private function createOrGetPlan(string $productId, string $planType, float $amount): string
-    {
-        $accessToken = $this->getAccessToken();
-
-        $planId = 'SOULSYNC_' . strtoupper($planType) . '_MONTHLY';
-
-        $planData = [
-            'product_id' => $productId,
-            'name' => 'SoulSync ' . ucfirst($planType) . ' Plan',
-            'description' => 'Monthly subscription for SoulSync ' . $planType . ' features',
-            'status' => 'ACTIVE',
-            'billing_cycles' => [
-                [
-                    'frequency' => [
-                        'interval_unit' => 'MONTH',
-                        'interval_count' => 1
-                    ],
-                    'tenure_type' => 'REGULAR',
-                    'sequence' => 1,
-                    'total_cycles' => 0, // Infinite cycles
-                    'pricing_scheme' => [
-                        'fixed_price' => [
-                            'value' => number_format($amount, 2, '.', ''),
-                            'currency_code' => 'USD'
-                        ]
-                    ]
-                ]
-            ],
-            'payment_preferences' => [
-                'auto_bill_outstanding' => true,
-                'setup_fee' => [
-                    'value' => '0.00',
-                    'currency_code' => 'USD'
-                ],
-                'setup_fee_failure_action' => 'CONTINUE',
-                'payment_failure_threshold' => 3
-            ],
-            'taxes' => [
-                'percentage' => '0.00',
-                'inclusive' => false
-            ]
-        ];
-
-        $response = Http::withToken($accessToken)
-            ->post($this->baseUrl . '/v1/billing/plans', $planData);
-
-        if ($response->successful()) {
-            $plan = $response->json();
-            return $plan['id'];
-        }
-
-        // Plan might already exist, try to list plans and find it
-        $listResponse = Http::withToken($accessToken)
-            ->get($this->baseUrl . '/v1/billing/plans', [
-                'product_id' => $productId,
-                'page_size' => 20
-            ]);
-
-        if ($listResponse->successful()) {
-            $plans = $listResponse->json()['plans'] ?? [];
-            foreach ($plans as $plan) {
-                if (str_contains($plan['name'], ucfirst($planType))) {
-                    return $plan['id'];
-                }
-            }
-        }
-
-        throw new Exception('Failed to create or get PayPal plan');
-    }
-
-    /**
-     * Get approval URL from PayPal response links
-     */
-    private function getApprovalUrl(array $links): ?string
-    {
-        foreach ($links as $link) {
-            if ($link['rel'] === 'approve') {
-                return $link['href'];
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Verify PayPal subscription
-     */
-    public function verifySubscription(string $subscriptionId): array
-    {
-        try {
-            $accessToken = $this->getAccessToken();
-
-            $response = Http::withToken($accessToken)
-                ->get($this->baseUrl . '/v1/billing/subscriptions/' . $subscriptionId);
-
-            if ($response->successful()) {
-                $subscription = $response->json();
-                
-                return [
-                    'success' => true,
-                    'status' => $subscription['status'],
-                    'subscription' => $subscription
-                ];
-            }
-
-            return [
-                'success' => false,
-                'error' => 'Subscription not found'
-            ];
-
-        } catch (Exception $e) {
-            Log::error('PayPal subscription verification error', [
-                'subscription_id' => $subscriptionId,
-                'error' => $e->getMessage()
-            ]);
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Cancel PayPal subscription
-     */
-    public function cancelSubscription(string $subscriptionId, string $reason = 'User requested cancellation'): array
-    {
-        try {
-            $accessToken = $this->getAccessToken();
-
-            $cancelData = [
-                'reason' => $reason
-            ];
-
-            $response = Http::withToken($accessToken)
-                ->post($this->baseUrl . '/v1/billing/subscriptions/' . $subscriptionId . '/cancel', $cancelData);
-
-            if ($response->status() === 204) { // PayPal returns 204 for successful cancellation
-                return [
-                    'success' => true,
-                    'message' => 'Subscription cancelled successfully'
-                ];
-            }
-
-            return [
-                'success' => false,
-                'error' => 'Failed to cancel subscription: ' . $response->body()
-            ];
-
-        } catch (Exception $e) {
-            Log::error('PayPal subscription cancellation error', [
-                'subscription_id' => $subscriptionId,
-                'error' => $e->getMessage()
-            ]);
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Get subscription details
-     */
-    public function getSubscriptionDetails(string $subscriptionId): array
-    {
-        try {
-            $accessToken = $this->getAccessToken();
-
-            $response = Http::withToken($accessToken)
-                ->get($this->baseUrl . '/v1/billing/subscriptions/' . $subscriptionId);
-
-            if ($response->successful()) {
-                return [
-                    'success' => true,
-                    'subscription' => $response->json()
-                ];
-            }
-
-            return [
-                'success' => false,
-                'error' => 'Subscription not found'
-            ];
-
-        } catch (Exception $e) {
-            Log::error('PayPal get subscription details error', [
-                'subscription_id' => $subscriptionId,
-                'error' => $e->getMessage()
-            ]);
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Process PayPal webhook
-     */
-    public function processWebhook(array $webhookData): array
-    {
-        try {
-            $eventType = $webhookData['event_type'] ?? '';
-            $resource = $webhookData['resource'] ?? [];
-
-            switch ($eventType) {
-                case 'BILLING.SUBSCRIPTION.ACTIVATED':
-                    return $this->handleSubscriptionActivated($resource);
-                    
-                case 'BILLING.SUBSCRIPTION.CANCELLED':
-                case 'BILLING.SUBSCRIPTION.SUSPENDED':
-                    return $this->handleSubscriptionCancelled($resource);
-                    
-                case 'PAYMENT.SALE.COMPLETED':
-                    return $this->handlePaymentCompleted($resource);
-                    
-                case 'PAYMENT.SALE.DENIED':
-                case 'PAYMENT.SALE.FAILED':
-                    return $this->handlePaymentFailed($resource);
-                    
-                default:
-                    Log::info('Unhandled PayPal webhook event', ['event_type' => $eventType]);
-                    return ['success' => true, 'message' => 'Event not handled'];
-            }
-
-        } catch (Exception $e) {
-            Log::error('PayPal webhook processing error', [
-                'error' => $e->getMessage(),
-                'webhook_data' => $webhookData
-            ]);
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Handle subscription activated webhook
-     */
-    private function handleSubscriptionActivated(array $resource): array
-    {
-        $subscriptionId = $resource['id'] ?? null;
+        $cacheKey = 'paypal_access_token';
         
-        if (!$subscriptionId) {
-            return ['success' => false, 'error' => 'No subscription ID'];
+        // Check if we have a cached token
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
         }
 
-        $subscription = Subscription::where('payment_gateway_id', $subscriptionId)->first();
-        
-        if ($subscription) {
-            $subscription->update([
-                'status' => 'active',
-                'payment_status' => 'paid',
-                'starts_at' => now(),
-                'payment_details' => json_encode($resource)
-            ]);
+        $response = Http::withHeaders([
+            'Authorization' => 'Basic ' . base64_encode($this->clientId . ':' . $this->clientSecret),
+            'Content-Type' => 'application/x-www-form-urlencoded',
+        ])->post($this->baseUrl . '/v1/oauth2/token', [
+            'grant_type' => 'client_credentials',
+        ]);
 
-            // Activate user premium
-            $subscription->user->update([
-                'is_premium' => true,
-                'premium_expires_at' => now()->addMonth()
+        if (!$response->successful()) {
+            Log::error('Failed to get PayPal access token', [
+                'error' => $response->json(),
+                'status_code' => $response->status(),
             ]);
+            throw new \Exception('Failed to authenticate with PayPal');
         }
 
-        return ['success' => true, 'message' => 'Subscription activated'];
-    }
+        $tokenData = $response->json();
+        $accessToken = $tokenData['access_token'];
+        $expiresIn = $tokenData['expires_in'] ?? 3600;
 
-    /**
-     * Handle subscription cancelled webhook
-     */
-    private function handleSubscriptionCancelled(array $resource): array
-    {
-        $subscriptionId = $resource['id'] ?? null;
-        
-        if (!$subscriptionId) {
-            return ['success' => false, 'error' => 'No subscription ID'];
-        }
+        // Cache the token for slightly less than its expiration time
+        Cache::put($cacheKey, $accessToken, $expiresIn - 300);
 
-        $subscription = Subscription::where('payment_gateway_id', $subscriptionId)->first();
-        
-        if ($subscription) {
-            $subscription->update([
-                'status' => 'cancelled',
-                'cancelled_at' => now(),
-                'payment_details' => json_encode($resource)
-            ]);
-
-            // Deactivate user premium
-            $subscription->user->update([
-                'is_premium' => false,
-                'premium_expires_at' => null
-            ]);
-        }
-
-        return ['success' => true, 'message' => 'Subscription cancelled'];
-    }
-
-    /**
-     * Handle payment completed webhook
-     */
-    private function handlePaymentCompleted(array $resource): array
-    {
-        // Handle individual payment completion
-        Log::info('PayPal payment completed', ['resource' => $resource]);
-        return ['success' => true, 'message' => 'Payment completed'];
-    }
-
-    /**
-     * Handle payment failed webhook
-     */
-    private function handlePaymentFailed(array $resource): array
-    {
-        // Handle payment failure
-        Log::warning('PayPal payment failed', ['resource' => $resource]);
-        return ['success' => true, 'message' => 'Payment failed handled'];
+        return $accessToken;
     }
 
     /**
      * Verify webhook signature
      */
-    public function verifyWebhookSignature(array $headers, string $payload): bool
+    private function verifyWebhookSignature(string $payload, array $headers): bool
     {
         try {
-            $accessToken = $this->getAccessToken();
-            
-            $verifyData = [
-                'auth_algo' => $headers['PAYPAL-AUTH-ALGO'] ?? '',
-                'cert_id' => $headers['PAYPAL-CERT-ID'] ?? '',
-                'transmission_id' => $headers['PAYPAL-TRANSMISSION-ID'] ?? '',
-                'transmission_sig' => $headers['PAYPAL-TRANSMISSION-SIG'] ?? '',
-                'transmission_time' => $headers['PAYPAL-TRANSMISSION-TIME'] ?? '',
-                'webhook_id' => config('services.paypal.webhook_id'),
-                'webhook_event' => json_decode($payload, true)
-            ];
+            $transmissionId = $headers['paypal-transmission-id'][0] ?? '';
+            $timestamp = $headers['paypal-transmission-time'][0] ?? '';
+            $webhookId = $this->webhookId;
+            $certUrl = $headers['paypal-cert-url'][0] ?? '';
+            $authAlgo = $headers['paypal-auth-algo'][0] ?? '';
+            $transmissionSig = $headers['paypal-transmission-sig'][0] ?? '';
 
-            $response = Http::withToken($accessToken)
-                ->post($this->baseUrl . '/v1/notifications/verify-webhook-signature', $verifyData);
-
-            if ($response->successful()) {
-                $result = $response->json();
-                return ($result['verification_status'] ?? '') === 'SUCCESS';
+            if (!$transmissionId || !$timestamp || !$webhookId || !$certUrl || !$authAlgo || !$transmissionSig) {
+                Log::error('PayPal webhook missing required headers');
+                return false;
             }
 
-            return false;
+            // Verify certificate URL
+            if (!filter_var($certUrl, FILTER_VALIDATE_URL) || 
+                !str_contains($certUrl, 'api.paypal.com') && !str_contains($certUrl, 'api.sandbox.paypal.com')) {
+                Log::error('PayPal webhook invalid certificate URL', ['cert_url' => $certUrl]);
+                return false;
+            }
 
-        } catch (Exception $e) {
-            Log::error('PayPal webhook signature verification error', ['error' => $e->getMessage()]);
+            // Get certificate
+            $certResponse = Http::get($certUrl);
+            if (!$certResponse->successful()) {
+                Log::error('Failed to fetch PayPal certificate', ['cert_url' => $certUrl]);
+                return false;
+            }
+
+            $cert = $certResponse->body();
+
+            // Create verification string
+            $verificationString = $transmissionId . '|' . $timestamp . '|' . $webhookId . '|' . hash('sha256', $payload, false);
+
+            // Verify signature
+            $result = openssl_verify(
+                $verificationString,
+                base64_decode($transmissionSig),
+                $cert,
+                OPENSSL_ALGO_SHA256
+            );
+
+            return $result === 1;
+
+        } catch (\Exception $e) {
+            Log::error('PayPal webhook signature verification error', [
+                'error' => $e->getMessage(),
+            ]);
             return false;
+        }
+    }
+
+    /**
+     * Get user-friendly error message
+     */
+    private function getUserFriendlyError(array $error): string
+    {
+        $errorName = $error['name'] ?? '';
+        $errorMessage = $error['message'] ?? 'Unknown error';
+        
+        return match($errorName) {
+            'PAYMENT_DENIED' => 'Payment was denied. Please try a different payment method.',
+            'PAYMENT_NOT_APPROVED_FOR_EXECUTION' => 'Payment was not approved. Please try again.',
+            'PAYMENT_SOURCE_INFO_CANNOT_BE_VERIFIED' => 'Payment source information cannot be verified.',
+            'PAYMENT_SOURCE_DECLINED_BY_PROCESSOR' => 'Payment was declined by the processor.',
+            'PAYMENT_SOURCE_NOT_SUPPORTED' => 'This payment method is not supported.',
+            'PAYMENT_SOURCE_ALREADY_EXISTS' => 'This payment method already exists.',
+            'PAYMENT_SOURCE_BAD_REQUEST' => 'Invalid payment method information.',
+            'PAYMENT_SOURCE_NOT_FOUND' => 'Payment method not found.',
+            'PAYMENT_SOURCE_REQUIRED' => 'Payment method is required.',
+            'PAYMENT_SOURCE_CANNOT_BE_USED' => 'This payment method cannot be used.',
+            'PAYMENT_SOURCE_EXPIRED' => 'Payment method has expired.',
+            'PAYMENT_SOURCE_INVALID' => 'Invalid payment method.',
+            'PAYMENT_SOURCE_LIMIT_EXCEEDED' => 'Payment method limit exceeded.',
+            'PAYMENT_SOURCE_NOT_ELIGIBLE' => 'Payment method is not eligible.',
+            'PAYMENT_SOURCE_NOT_VERIFIED' => 'Payment method is not verified.',
+            'PAYMENT_SOURCE_REQUIRES_ACTION' => 'Payment method requires additional action.',
+            'PAYMENT_SOURCE_REQUIRES_CONSENT' => 'Payment method requires consent.',
+            'PAYMENT_SOURCE_REQUIRES_CORRESPONDENCE' => 'Payment method requires correspondence.',
+            'PAYMENT_SOURCE_REQUIRES_PHONE_VERIFICATION' => 'Payment method requires phone verification.',
+            'PAYMENT_SOURCE_REQUIRES_REVIEW' => 'Payment method requires review.',
+            'PAYMENT_SOURCE_REQUIRES_VERIFICATION' => 'Payment method requires verification.',
+            'PAYMENT_SOURCE_REVOKED' => 'Payment method has been revoked.',
+            'PAYMENT_SOURCE_SUSPENDED' => 'Payment method is suspended.',
+            'PAYMENT_SOURCE_TEMPORARILY_UNAVAILABLE' => 'Payment method is temporarily unavailable.',
+            'PAYMENT_SOURCE_UNUSABLE' => 'Payment method is unusable.',
+            'PAYMENT_SOURCE_VERIFICATION_FAILED' => 'Payment method verification failed.',
+            'PAYMENT_SOURCE_VERIFICATION_REQUIRED' => 'Payment method verification required.',
+            'PAYMENT_SOURCE_VERIFICATION_TIMEOUT' => 'Payment method verification timeout.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED' => 'Payment method verification not supported.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR' => 'Payment method verification not supported by processor.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_CARD_TYPE' => 'Payment method verification not supported for this card type.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_COUNTRY' => 'Payment method verification not supported for this country.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_CURRENCY' => 'Payment method verification not supported for this currency.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_MERCHANT' => 'Payment method verification not supported for this merchant.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE' => 'Payment method verification not supported for this payment source.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_TYPE' => 'Payment method verification not supported for this payment source type.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE' => 'Payment method verification not supported for this payment source usage.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE_TYPE' => 'Payment method verification not supported for this payment source usage type.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE' => 'Payment method verification not supported for this payment source usage type and payment source.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE_TYPE' => 'Payment method verification not supported for this payment source usage type and payment source type.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE_TYPE_AND_PAYMENT_SOURCE' => 'Payment method verification not supported for this payment source usage type and payment source type and payment source.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE_TYPE_AND_PAYMENT_SOURCE_AND_PAYMENT_SOURCE_USAGE' => 'Payment method verification not supported for this payment source usage type and payment source type and payment source and payment source usage.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE_TYPE_AND_PAYMENT_SOURCE_AND_PAYMENT_SOURCE_USAGE_AND_PAYMENT_SOURCE_USAGE_TYPE' => 'Payment method verification not supported for this payment source usage type and payment source type and payment source and payment source usage and payment source usage type.',
+            'PAYMENT_SOURCE_VERIFICATION_UNSUPPORTED_BY_PROCESSOR_FOR_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE_TYPE_AND_PAYMENT_SOURCE_AND_PAYMENT_SOURCE_USAGE_AND_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE_USAGE_TYPE_AND_PAYMENT_SOURCE_USAGE_TYPE' => 'Payment method verification not supported for this payment source usage type and payment source type and payment source and payment source usage and payment source usage type and payment source usage type and payment source usage type.',
+            default => $errorMessage,
+        };
+    }
+
+    /**
+     * Cancel subscription
+     */
+    public function cancelSubscription(Subscription $subscription): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->accessToken,
+                'Content-Type' => 'application/json',
+            ])->post($this->baseUrl . "/v1/billing/subscriptions/{$subscription->paypal_subscription_id}/cancel", [
+                'reason' => 'User requested cancellation',
+            ]);
+
+            if (!$response->successful()) {
+                $error = $response->json();
+                Log::error('PayPal subscription cancellation failed', [
+                    'subscription_id' => $subscription->id,
+                    'error' => $error,
+                ]);
+
+                return [
+                    'success' => false,
+                    'error' => $this->getUserFriendlyError($error),
+                ];
+            }
+
+            $subscription->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+            ]);
+
+            Log::info('PayPal subscription cancelled', [
+                'subscription_id' => $subscription->id,
+            ]);
+
+            return ['success' => true, 'message' => 'Subscription cancelled successfully'];
+
+        } catch (\Exception $e) {
+            Log::error('Error cancelling PayPal subscription', [
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Failed to cancel subscription. Please try again.',
+            ];
+        }
+    }
+
+    /**
+     * Refund payment
+     */
+    public function refundPayment(string $captureId, array $refundData = []): array
+    {
+        try {
+            $refundPayload = array_merge([
+                'amount' => [
+                    'currency_code' => 'USD',
+                    'value' => '0.00',
+                ],
+            ], $refundData);
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->accessToken,
+                'Content-Type' => 'application/json',
+                'Prefer' => 'return=representation',
+            ])->post($this->baseUrl . "/v2/payments/captures/{$captureId}/refund", $refundPayload);
+
+            if (!$response->successful()) {
+                $error = $response->json();
+                Log::error('PayPal refund failed', [
+                    'capture_id' => $captureId,
+                    'error' => $error,
+                ]);
+
+                return [
+                    'success' => false,
+                    'error' => $this->getUserFriendlyError($error),
+                ];
+            }
+
+            $refund = $response->json();
+
+            Log::info('PayPal refund created', [
+                'capture_id' => $captureId,
+                'refund_id' => $refund['id'],
+                'status' => $refund['status'],
+            ]);
+
+            return [
+                'success' => true,
+                'refund_id' => $refund['id'],
+                'status' => $refund['status'],
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error creating PayPal refund', [
+                'capture_id' => $captureId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Failed to process refund. Please try again.',
+            ];
         }
     }
 } 

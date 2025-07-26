@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\Admin\ContentController;
 use App\Http\Controllers\Api\Admin\SettingsController as AdminSettingsController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Models\User;
+use App\Http\Controllers\Api\EmailVerificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -76,6 +77,13 @@ Route::prefix('v1')->group(function () {
             'timestamp' => now()
         ]);
     });
+});
+
+// Email verification routes
+Route::prefix('email')->group(function () {
+    Route::get('verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+        ->name('verification.verify');
+    Route::get('verify/{id}/status', [EmailVerificationController::class, 'status']);
 });
 
 // Protected routes (authentication required)
@@ -247,6 +255,12 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('compatibility-reports', [InsightsController::class, 'compatibilityReports']);
         Route::get('profile-optimization', [InsightsController::class, 'profileOptimization']);
     });
+
+    // Email verification (authenticated)
+    Route::prefix('email')->group(function () {
+        Route::post('resend', [EmailVerificationController::class, 'resend']);
+        Route::get('check', [EmailVerificationController::class, 'check']);
+    });
 });
 
 // Admin routes (role-based access)
@@ -298,11 +312,14 @@ Route::prefix('v1/admin')->middleware(['auth:sanctum', 'role:admin|moderator'])-
     });
 });
 
-// Webhook routes (for payment gateways)
+// Webhook routes (no authentication required)
 Route::prefix('webhooks')->group(function () {
     Route::post('stripe', [WebhookController::class, 'stripe']);
+    Route::post('paypal', [WebhookController::class, 'paypal']);
     Route::post('payhere', [WebhookController::class, 'payhere']);
     Route::post('webxpay', [WebhookController::class, 'webxpay']);
+    Route::post('test', [WebhookController::class, 'test']);
+    Route::get('health', [WebhookController::class, 'health']);
 });
 
 // Fallback route for API

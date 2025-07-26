@@ -11,11 +11,11 @@ return [
     | framework when an event needs to be broadcast. You may set this to
     | any of the connections defined in the "connections" array below.
     |
-    | Supported: "pusher", "ably", "redis", "log", "null"
+    | Supported: "pusher", "ably", "redis", "log", "null", "websockets"
     |
     */
 
-    'default' => env('BROADCAST_DRIVER', 'null'),
+    'default' => env('BROADCAST_DRIVER', 'websockets'),
 
     /*
     |--------------------------------------------------------------------------
@@ -48,6 +48,21 @@ return [
             ],
         ],
 
+        'websockets' => [
+            'driver' => 'pusher',
+            'key' => env('PUSHER_APP_KEY'),
+            'secret' => env('PUSHER_APP_SECRET'),
+            'app_id' => env('PUSHER_APP_ID'),
+            'options' => [
+                'cluster' => env('PUSHER_APP_CLUSTER'),
+                'host' => env('WEBSOCKET_HOST', '127.0.0.1'),
+                'port' => env('WEBSOCKET_PORT', 6001),
+                'scheme' => env('WEBSOCKET_SCHEME', 'http'),
+                'encrypted' => false,
+                'useTLS' => false,
+            ],
+        ],
+
         'ably' => [
             'driver' => 'ably',
             'key' => env('ABLY_KEY'),
@@ -64,39 +79,6 @@ return [
 
         'null' => [
             'driver' => 'null',
-        ],
-
-        // Custom WebSocket server configuration
-        'websocket' => [
-            'driver' => 'websocket',
-            'host' => env('WEBSOCKET_HOST', 'localhost'),
-            'port' => env('WEBSOCKET_PORT', 6001),
-            'scheme' => env('WEBSOCKET_SCHEME', 'http'),
-            'app_id' => env('WEBSOCKET_APP_ID'),
-            'app_key' => env('WEBSOCKET_APP_KEY'),
-            'app_secret' => env('WEBSOCKET_APP_SECRET'),
-            'options' => [
-                'cluster' => env('WEBSOCKET_CLUSTER'),
-                'encrypted' => env('WEBSOCKET_ENCRYPTED', true),
-                'useTLS' => env('WEBSOCKET_SCHEME', 'http') === 'https',
-                'timeout' => env('WEBSOCKET_TIMEOUT', 30),
-                'max_attempts' => env('WEBSOCKET_MAX_ATTEMPTS', 3),
-            ],
-        ],
-
-        // Socket.io configuration
-        'socketio' => [
-            'driver' => 'socketio',
-            'host' => env('SOCKETIO_HOST', 'localhost'),
-            'port' => env('SOCKETIO_PORT', 3000),
-            'scheme' => env('SOCKETIO_SCHEME', 'http'),
-            'options' => [
-                'transports' => ['websocket', 'polling'],
-                'timeout' => env('SOCKETIO_TIMEOUT', 30),
-                'reconnection' => true,
-                'reconnection_attempts' => env('SOCKETIO_RECONNECTION_ATTEMPTS', 5),
-                'reconnection_delay' => env('SOCKETIO_RECONNECTION_DELAY', 1000),
-            ],
         ],
 
     ],

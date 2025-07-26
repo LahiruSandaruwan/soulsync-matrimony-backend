@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Auth\Passwords\CanResetPassword;
+use Illuminate\Support\Facades\URL;
 
 class User extends Authenticatable implements MustVerifyEmail, \Illuminate\Contracts\Auth\CanResetPassword
 {
@@ -144,6 +145,58 @@ class User extends Authenticatable implements MustVerifyEmail, \Illuminate\Contr
     public function sendPasswordResetNotification($token)
     {
         $this->notify(new \Illuminate\Auth\Notifications\ResetPassword($token));
+    }
+
+    /**
+     * Send email verification notification
+     */
+    public function sendEmailVerificationNotification()
+    {
+        $this->notify(new \App\Notifications\VerifyEmailNotification());
+    }
+
+    /**
+     * Check if user has verified email
+     */
+    public function hasVerifiedEmail(): bool
+    {
+        return !is_null($this->email_verified_at);
+    }
+
+    /**
+     * Mark email as verified
+     */
+    public function markEmailAsVerified(): bool
+    {
+        return $this->forceFill([
+            'email_verified_at' => $this->freshTimestamp(),
+        ])->save();
+    }
+
+    /**
+     * Send verification email
+     */
+    public function sendVerificationEmail(): void
+    {
+        if (!$this->hasVerifiedEmail()) {
+            $this->sendEmailVerificationNotification();
+            $this->update(['email_verification_sent_at' => now()]);
+        }
+    }
+
+    /**
+     * Get verification URL
+     */
+    public function getVerificationUrl(): string
+    {
+        return URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes(60),
+            [
+                'id' => $this->getKey(),
+                'hash' => sha1($this->getEmailForVerification()),
+            ]
+        );
     }
 
     // Relationships

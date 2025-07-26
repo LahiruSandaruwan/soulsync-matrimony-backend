@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Broadcast;
 use App\Models\User;
 use App\Models\Conversation;
-use App\Models\UserMatch;
 
 /*
 |--------------------------------------------------------------------------
@@ -21,43 +20,38 @@ Broadcast::channel('user.{id}', function (User $user, $id) {
     return (int) $user->id === (int) $id;
 });
 
-// Chat channels - users can only access conversations they're part of
-Broadcast::channel('chat.{conversation_id}', function (User $user, $conversation_id) {
-    $conversation = Conversation::find($conversation_id);
-    
-    if (!$conversation) {
-        return false;
-    }
-    
-    return $conversation->participants()->where('user_id', $user->id)->exists();
+// Chat channels
+Broadcast::channel('chat.{conversationId}', function (User $user, $conversationId) {
+    $conversation = Conversation::find($conversationId);
+    return $conversation && $conversation->participants()->where('user_id', $user->id)->exists();
 });
 
-// Match notifications - users can only access their own match notifications
-Broadcast::channel('matches.{user_id}', function (User $user, $user_id) {
-    return (int) $user->id === (int) $user_id;
+// Match notifications
+Broadcast::channel('matches.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId;
 });
 
-// Profile view notifications - users can only access their own profile view notifications
-Broadcast::channel('profile-views.{user_id}', function (User $user, $user_id) {
-    return (int) $user->id === (int) $user_id;
+// Profile view notifications
+Broadcast::channel('profile-views.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId;
 });
 
-// System notifications - users can only access their own notifications
-Broadcast::channel('notifications.{user_id}', function (User $user, $user_id) {
-    return (int) $user->id === (int) $user_id;
+// System notifications
+Broadcast::channel('notifications.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId;
 });
 
-// Admin channels - only admin users can access
+// Admin channels
 Broadcast::channel('admin.{channel}', function (User $user, $channel) {
     return $user->hasRole('admin');
 });
 
-// Public channels - anyone can access (for announcements, etc.)
+// Public channels (for announcements, etc.)
 Broadcast::channel('public.{channel}', function (User $user, $channel) {
-    return true;
+    return true; // Anyone can listen to public channels
 });
 
-// Online users presence channel - authenticated users can join
+// Online users presence channel
 Broadcast::channel('online-users', function (User $user) {
     return [
         'id' => $user->id,
@@ -66,12 +60,43 @@ Broadcast::channel('online-users', function (User $user) {
     ];
 });
 
-// User status channel - users can only access their own status
-Broadcast::channel('user-status.{user_id}', function (User $user, $user_id) {
-    return (int) $user->id === (int) $user_id;
+// User status channel
+Broadcast::channel('user-status.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId;
 });
 
-// Premium features channel - only premium users can access
-Broadcast::channel('premium.{channel}', function (User $user, $channel) {
-    return $user->hasActiveSubscription();
+// Premium features channel
+Broadcast::channel('premium.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId && $user->is_premium;
+});
+
+// Voice chat channels
+Broadcast::channel('voice.{conversationId}', function (User $user, $conversationId) {
+    $conversation = Conversation::find($conversationId);
+    return $conversation && $conversation->participants()->where('user_id', $user->id)->exists();
+});
+
+// Horoscope compatibility channel
+Broadcast::channel('horoscope.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId;
+});
+
+// Subscription updates channel
+Broadcast::channel('subscription.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId;
+});
+
+// Payment status channel
+Broadcast::channel('payment.{userId}', function (User $user, $userId) {
+    return (int) $user->id === (int) $userId;
+});
+
+// System maintenance channel
+Broadcast::channel('system.maintenance', function (User $user) {
+    return true; // All authenticated users can receive system notifications
+});
+
+// System announcements channel
+Broadcast::channel('system.announcements', function (User $user) {
+    return true; // All authenticated users can receive announcements
 }); 
