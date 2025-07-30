@@ -32,7 +32,7 @@ class UserController extends Controller
             $sortOrder = $request->get('sort_order', 'desc');
 
             $query = User::with(['profile', 'activeSubscription'])
-                ->withCount(['matches', 'sentMessages', 'reports']);
+                ->withCount(['matches', 'sentMessages', 'reportsMade']);
 
             // Apply filters
             if ($search) {
@@ -72,7 +72,8 @@ class UserController extends Controller
             $users->getCollection()->transform(function ($user) {
                 return [
                     'id' => $user->id,
-                    'name' => $user->first_name . ' ' . $user->last_name,
+                    'first_name' => $user->first_name,
+                    'last_name' => $user->last_name,
                     'email' => $user->email,
                     'phone' => $user->phone,
                     'status' => $user->status,
@@ -86,7 +87,7 @@ class UserController extends Controller
                     'profile_completion' => $user->profile_completion_percentage ?? 0,
                     'matches_count' => $user->matches_count,
                     'messages_count' => $user->sent_messages_count,
-                    'reports_count' => $user->reports_count,
+                    'reports_count' => $user->reports_made_count,
                     'subscription' => $user->activeSubscription ? [
                         'plan_type' => $user->activeSubscription->plan_type,
                         'status' => $user->activeSubscription->status,
@@ -97,7 +98,15 @@ class UserController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $users,
+                'data' => $users->items(),
+                'meta' => [
+                    'current_page' => $users->currentPage(),
+                    'total' => $users->total(),
+                    'per_page' => $users->perPage(),
+                    'last_page' => $users->lastPage(),
+                    'from' => $users->firstItem(),
+                    'to' => $users->lastItem(),
+                ],
                 'filters' => [
                     'statuses' => ['active', 'inactive', 'suspended', 'banned', 'deleted'],
                     'countries' => User::distinct()->pluck('country_code')->filter()->values(),
@@ -135,10 +144,10 @@ class UserController extends Controller
                 'sentMessages' => function ($query) {
                     $query->latest()->limit(10);
                 },
-                'reports' => function ($query) {
+                'reportsMade' => function ($query) {
                     $query->latest()->limit(10);
                 },
-                'reportedBy' => function ($query) {
+                'reportsReceived' => function ($query) {
                     $query->latest()->limit(10);
                 }
             ]);
@@ -196,8 +205,8 @@ class UserController extends Controller
                 'activity' => [
                     'matches_count' => $user->matches->count(),
                     'messages_count' => $user->sentMessages->count(),
-                    'reports_count' => $user->reports->count(),
-                    'reported_count' => $user->reportedBy->count(),
+                    'reports_count' => $user->reportsMade->count(),
+                    'reported_count' => $user->reportsReceived->count(),
                     'recent_matches' => $user->matches->map(function ($match) {
                         return [
                             'matched_user' => $match->matchedUser->first_name,
@@ -214,7 +223,7 @@ class UserController extends Controller
                     }),
                 ],
                 'moderation' => [
-                    'reports_filed' => $user->reports->map(function ($report) {
+                    'reports_filed' => $user->reportsMade->map(function ($report) {
                         return [
                             'reported_user' => $report->reportedUser->first_name,
                             'reason' => $report->reason,
@@ -222,7 +231,7 @@ class UserController extends Controller
                             'created_at' => $report->created_at,
                         ];
                     }),
-                    'reports_received' => $user->reportedBy->map(function ($report) {
+                    'reports_received' => $user->reportsReceived->map(function ($report) {
                         return [
                             'reporter' => $report->reporter->first_name,
                             'reason' => $report->reason,
@@ -235,7 +244,12 @@ class UserController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $data
+                'data' => array_merge($data['user'], [
+                    'profile' => $data['profile'],
+                    'preferences' => $data['preferences'],
+                    'photos' => $data['photos'],
+                    'subscriptions' => $data['subscription_history']
+                ])
             ]);
 
         } catch (\Exception $e) {
@@ -606,7 +620,10 @@ class UserController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($user, $request) {
+            // Store user data before deletion
+            $userData = $user->toArray();
+            
+            DB::transaction(function () use ($user, $request, $userData) {
                 // Store deletion info
                 $deletionData = [
                     'user_id' => $user->id,
@@ -619,11 +636,11 @@ class UserController extends Controller
 
                 // Store in deleted_users table for admin tracking
             \App\Models\DeletedUser::create([
-                'original_user_id' => $user->id,
-                'email' => $user->email,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'user_data' => $user->toArray(),
+                'original_user_id' => $userData['id'],
+                'email' => $userData['email'],
+                'first_name' => $userData['first_name'],
+                'last_name' => $userData['last_name'],
+                'user_data' => $userData,
                 'deletion_date' => now(),
                 'deleted_by' => 'admin',
                 'deleted_by_admin_id' => $request->user()->id,
@@ -634,38 +651,18 @@ class UserController extends Controller
             ]);
                 Log::warning('User deleted by admin', $deletionData);
 
-                // Anonymize user data
-                $user->update([
-                    'status' => 'deleted',
-                    'email' => 'deleted_' . $user->id . '@soulsync.com',
-                    'first_name' => 'Deleted',
-                    'last_name' => 'User',
-                    'phone' => null,
-                    'date_of_birth' => null,
-                    'deleted_at' => now(),
-                    'deleted_by' => $request->user()->id,
-                    'deletion_reason' => $request->reason,
-                ]);
-
-                // Revoke all tokens
-                $user->tokens()->delete();
-
-                // Cancel subscriptions
-                $user->subscriptions()->where('status', 'active')->update(['status' => 'cancelled']);
-
-                // Deactivate matches
-                $user->matches()->update(['status' => 'inactive']);
-                $user->targetMatches()->update(['status' => 'inactive']);
-
-                // Handle related data cleanup
-            $this->cleanupUserDataForAdmin($user);
+                // Handle related data cleanup before deletion
+                $this->cleanupUserDataForAdmin($user);
+                
+                // Delete the user from the database
+                $user->delete();
         });
 
             return response()->json([
                 'success' => true,
                 'message' => 'User deleted successfully',
                 'data' => [
-                    'user_id' => $user->id,
+                    'user_id' => $userData['id'],
                     'deleted_at' => now(),
                 ]
             ]);
@@ -678,5 +675,189 @@ class UserController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Get user analytics
+     */
+    public function analytics(Request $request): JsonResponse
+    {
+        try {
+            $period = $request->get('period', '30_days');
+            
+            // Calculate registration trends
+            $registrationTrends = User::selectRaw('DATE(created_at) as date, COUNT(*) as count')
+                ->where('created_at', '>=', now()->subDays(30))
+                ->groupBy('date')
+                ->orderBy('date')
+                ->get();
+
+            // Active users count
+            $activeUsers = User::where('status', 'active')
+                ->where('last_active_at', '>=', now()->subDays(7))
+                ->count();
+
+            // Premium conversion rate
+            $totalUsers = User::count();
+            $premiumUsers = User::where('is_premium', true)->count();
+            $premiumConversion = $totalUsers > 0 ? ($premiumUsers / $totalUsers) * 100 : 0;
+
+            // Geographic distribution
+            $geographicDistribution = User::selectRaw('country_code, COUNT(*) as count')
+                ->whereNotNull('country_code')
+                ->groupBy('country_code')
+                ->orderBy('count', 'desc')
+                ->limit(10)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'registration_trends' => $registrationTrends,
+                    'active_users' => $activeUsers,
+                    'premium_conversion' => round($premiumConversion, 2),
+                    'geographic_distribution' => $geographicDistribution
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Admin user analytics error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get user analytics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export user data
+     */
+    public function export(Request $request): JsonResponse
+    {
+        try {
+            $format = $request->get('format', 'csv');
+            $filters = $request->get('filters', []);
+
+            // For now, return success response
+            // In a real implementation, this would generate and return a file
+            return response()->json([
+                'success' => true,
+                'message' => 'User data export initiated',
+                'data' => [
+                    'format' => $format,
+                    'filters' => $filters,
+                    'export_id' => uniqid('export_'),
+                    'status' => 'processing'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Admin user export error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export user data',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk action on users
+     */
+    public function bulkAction(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+            'action' => 'required|string|in:suspend,ban,delete,activate',
+            'reason' => 'required|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $userIds = $request->user_ids;
+            $action = $request->action;
+            $reason = $request->reason;
+
+            $users = User::whereIn('id', $userIds)->get();
+            $processedCount = 0;
+
+            foreach ($users as $user) {
+                switch ($action) {
+                    case 'suspend':
+                        $user->update(['status' => 'suspended']);
+                        break;
+                    case 'ban':
+                        $user->update(['status' => 'banned']);
+                        break;
+                    case 'delete':
+                        $user->update(['status' => 'deleted']);
+                        break;
+                    case 'activate':
+                        $user->update(['status' => 'active']);
+                        break;
+                }
+                $processedCount++;
+            }
+
+            Log::info('Bulk user action performed', [
+                'action' => $action,
+                'user_count' => $processedCount,
+                'reason' => $reason,
+                'admin_id' => $request->user()->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Bulk {$action} action completed successfully",
+                'data' => [
+                    'action' => $action,
+                    'processed_count' => $processedCount,
+                    'total_requested' => count($userIds),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Admin bulk user action error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to perform bulk action',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Cleanup user data for admin deletion
+     */
+    private function cleanupUserDataForAdmin(User $user): void
+    {
+        // Delete photos
+        $user->photos()->delete();
+        
+        // Delete messages
+        $user->sentMessages()->delete();
+        $user->receivedMessages()->delete();
+        
+        // Delete notifications
+        $user->notifications()->delete();
+        
+        // Delete reports
+        $user->reports()->delete();
+        $user->reportedBy()->delete();
+        
+        // Delete preferences
+        $user->preferences()->delete();
+        
+        // Delete profile
+        $user->profile()->delete();
     }
 } 

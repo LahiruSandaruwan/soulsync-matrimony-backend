@@ -42,17 +42,14 @@ class MatchingApiTest extends TestCase
                 ->assertJsonStructure([
                     'success',
                     'data' => [
-                        'matches' => [
-                            '*' => [
-                                'id',
-                                'first_name',
-                                'age',
-                                'compatibility_score',
-                                'profile_picture',
-                                'location',
-                            ]
-                        ],
-                        'total',
+                        '*' => [
+                            'id',
+                            'first_name',
+                            'age',
+                            'compatibility_score',
+                            'profile_picture',
+                            'location',
+                        ]
                     ]
                 ]);
     }
@@ -156,10 +153,10 @@ class MatchingApiTest extends TestCase
 
         $response = $this->postJson("/api/v1/matches/{$user->id}/like");
 
-        $response->assertStatus(400)
+        $response->assertStatus(422)
                 ->assertJson([
                     'success' => false,
-                    'message' => 'You cannot like yourself'
+                    'message' => 'You cannot like your own profile'
                 ]);
     }
 

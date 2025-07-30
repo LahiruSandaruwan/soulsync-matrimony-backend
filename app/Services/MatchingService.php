@@ -440,6 +440,33 @@ class MatchingService
      */
     public function processLike(User $user, User $targetUser, bool $isSuperLike = false): array
     {
+        // Check if user has already liked this target
+        $existingMatch = UserMatch::where('user_id', $user->id)
+            ->where('matched_user_id', $targetUser->id)
+            ->first();
+            
+        if ($existingMatch && in_array($existingMatch->user_action, ['liked', 'super_liked'])) {
+            return [
+                'success' => false,
+                'is_match' => false,
+                'message' => 'You have already liked this profile'
+            ];
+        }
+        
+        // Check if target user has blocked this user
+        $blockedMatch = UserMatch::where('user_id', $targetUser->id)
+            ->where('matched_user_id', $user->id)
+            ->where('user_action', 'blocked')
+            ->first();
+            
+        if ($blockedMatch) {
+            return [
+                'success' => false,
+                'is_match' => false,
+                'message' => 'Cannot like blocked user'
+            ];
+        }
+        
         // Find or create match record
         $match = UserMatch::firstOrCreate([
             'user_id' => $user->id,
@@ -468,6 +495,23 @@ class MatchingService
             $reciprocal->can_communicate = true;
             $reciprocal->communication_started_at = now();
             $reciprocal->save();
+            
+            // Create conversation for the mutual match
+            if (!$match->conversation_id) {
+                try {
+                    $conversation = \App\Models\Conversation::createMatchConversation($match);
+                    $match->conversation_id = $conversation->id;
+                    $match->save();
+                    $reciprocal->conversation_id = $conversation->id;
+                    $reciprocal->save();
+                } catch (\Exception $e) {
+                    \Log::error('Failed to create conversation for mutual match: ' . $e->getMessage(), [
+                        'match_id' => $match->id,
+                        'reciprocal_id' => $reciprocal->id
+                    ]);
+                }
+            }
+            
             // Fire match event for real-time updates and notifications
             event(new \App\Events\MatchFound($match, $user, $targetUser));
             return [

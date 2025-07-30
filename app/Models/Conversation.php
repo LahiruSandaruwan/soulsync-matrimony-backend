@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -15,52 +16,59 @@ class Conversation extends Model
     use HasFactory;
 
     protected $fillable = [
+        'user_one_id',
+        'user_two_id',
+        'match_id',
         'name',
         'type',
         'is_group',
-        'is_archived',
-        'archived_at',
-        'archived_by',
-        'is_blocked',
-        'blocked_at',
-        'blocked_by',
-        'blocked_reason',
+        'status',
+        'last_message',
+        'last_message_type',
+        'last_message_by',
         'last_message_at',
-        'last_message_id',
-        'unread_count',
+        'user_one_read_at',
+        'user_two_read_at',
+        'user_one_unread_count',
+        'user_two_unread_count',
+        'blocked_by',
+        'blocked_at',
+        'block_reason',
+        'is_premium_conversation',
+        'priority_conversation',
+        'conversation_settings',
+        'total_messages',
+        'started_at',
+        'days_active',
         'metadata',
-        'settings',
         'created_by',
-        'updated_by',
-        'deleted_at',
-        'deleted_by'
+        'updated_at',
+        'created_at'
     ];
 
     protected $casts = [
         'metadata' => 'array',
-        'settings' => 'array',
+        'conversation_settings' => 'array',
         'is_group' => 'boolean',
-        'is_archived' => 'boolean',
-        'is_blocked' => 'boolean',
-        'unread_count' => 'integer',
-        'archived_at' => 'datetime',
+        'is_premium_conversation' => 'boolean',
+        'priority_conversation' => 'boolean',
+        'user_one_unread_count' => 'integer',
+        'user_two_unread_count' => 'integer',
+        'total_messages' => 'integer',
+        'days_active' => 'integer',
         'blocked_at' => 'datetime',
         'last_message_at' => 'datetime',
-        'deleted_at' => 'datetime',
+        'started_at' => 'datetime',
+        'user_one_read_at' => 'datetime',
+        'user_two_read_at' => 'datetime',
     ];
 
-    protected $dates = [
-        'archived_at',
-        'blocked_at',
-        'last_message_at',
-        'deleted_at',
-    ];
+
 
     // Conversation Types
-    const TYPE_DIRECT = 'direct';
-    const TYPE_GROUP = 'group';
     const TYPE_MATCH = 'match';
-    const TYPE_SUPPORT = 'support';
+    const TYPE_INTEREST = 'interest';
+    const TYPE_PREMIUM = 'premium';
 
     // Conversation Status
     const STATUS_ACTIVE = 'active';
@@ -69,11 +77,19 @@ class Conversation extends Model
     const STATUS_DELETED = 'deleted';
 
     // Relationships
-    public function participants(): BelongsToMany
+    public function participants()
     {
-        return $this->belongsToMany(User::class, 'conversation_participants')
-                    ->withPivot(['role', 'joined_at', 'left_at', 'is_muted', 'muted_until'])
-                    ->withTimestamps();
+        return collect([$this->userOne, $this->userTwo])->filter();
+    }
+
+    public function userOne(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_one_id');
+    }
+
+    public function userTwo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_two_id');
     }
 
     public function messages(): HasMany
@@ -86,28 +102,19 @@ class Conversation extends Model
         return $this->hasOne(Message::class)->latest();
     }
 
-    public function createdBy(): BelongsToMany
+    public function createdBy(): BelongsTo
     {
-        return $this->belongsToMany(User::class, 'conversation_participants')
-                    ->wherePivot('role', 'creator');
+        return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function updatedBy(): BelongsToMany
+    public function updatedBy(): BelongsTo
     {
-        return $this->belongsToMany(User::class, 'conversation_participants')
-                    ->wherePivot('role', 'admin');
+        return $this->belongsTo(User::class, 'updated_by');
     }
 
-    public function archivedBy(): BelongsToMany
+    public function blockedByUser(): BelongsTo
     {
-        return $this->belongsToMany(User::class, 'conversation_participants')
-                    ->wherePivot('role', 'archiver');
-    }
-
-    public function blockedBy(): BelongsToMany
-    {
-        return $this->belongsToMany(User::class, 'conversation_participants')
-                    ->wherePivot('role', 'blocker');
+        return $this->belongsTo(User::class, 'blocked_by');
     }
 
     public function reports(): MorphMany
@@ -123,19 +130,17 @@ class Conversation extends Model
     // Scopes
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where('is_archived', false)
-                    ->where('is_blocked', false)
-                    ->whereNull('deleted_at');
+        return $query->where('status', self::STATUS_ACTIVE);
     }
 
     public function scopeArchived(Builder $query): Builder
     {
-        return $query->where('is_archived', true);
+        return $query->where('status', self::STATUS_ARCHIVED);
     }
 
     public function scopeBlocked(Builder $query): Builder
     {
-        return $query->where('is_blocked', true);
+        return $query->where('status', self::STATUS_BLOCKED);
     }
 
     public function scopeByType(Builder $query, string $type): Builder
@@ -145,12 +150,12 @@ class Conversation extends Model
 
     public function scopeDirect(Builder $query): Builder
     {
-        return $query->where('type', self::TYPE_DIRECT);
+        return $query->where('type', self::TYPE_MATCH)->where('is_group', false);
     }
 
     public function scopeGroup(Builder $query): Builder
     {
-        return $query->where('type', self::TYPE_GROUP);
+        return $query->where('is_group', true);
     }
 
     public function scopeMatch(Builder $query): Builder
@@ -160,21 +165,27 @@ class Conversation extends Model
 
     public function scopeSupport(Builder $query): Builder
     {
-        return $query->where('type', self::TYPE_SUPPORT);
+        return $query->where('type', self::TYPE_MATCH);
     }
 
     public function scopeForUser(Builder $query, User $user): Builder
     {
-        return $query->whereHas('participants', function ($q) use ($user) {
-            $q->where('user_id', $user->id);
+        return $query->where(function ($q) use ($user) {
+            $q->where('user_one_id', $user->id)
+              ->orWhere('user_two_id', $user->id);
         });
     }
 
     public function scopeWithUnreadMessages(Builder $query, User $user): Builder
     {
-        return $query->whereHas('participants', function ($q) use ($user) {
-            $q->where('user_id', $user->id)
-              ->where('unread_count', '>', 0);
+        return $query->where(function ($q) use ($user) {
+            $q->where(function ($subQ) use ($user) {
+                $subQ->where('user_one_id', $user->id)
+                     ->where('user_one_unread_count', '>', 0);
+            })->orWhere(function ($subQ) use ($user) {
+                $subQ->where('user_two_id', $user->id)
+                     ->where('user_two_unread_count', '>', 0);
+            });
         });
     }
 
@@ -190,18 +201,18 @@ class Conversation extends Model
 
     public function scopeOrderByUnreadCount(Builder $query): Builder
     {
-        return $query->orderBy('unread_count', 'desc');
+        return $query->orderBy('user_one_unread_count', 'desc');
     }
 
     // Methods
     public function isDirect(): bool
     {
-        return $this->type === self::TYPE_DIRECT;
+        return $this->type === self::TYPE_MATCH && !$this->is_group;
     }
 
     public function isGroup(): bool
     {
-        return $this->type === self::TYPE_GROUP;
+        return $this->is_group;
     }
 
     public function isMatch(): bool
@@ -211,27 +222,27 @@ class Conversation extends Model
 
     public function isSupport(): bool
     {
-        return $this->type === self::TYPE_SUPPORT;
+        return $this->type === self::TYPE_MATCH;
     }
 
     public function isActive(): bool
     {
-        return !$this->is_archived && !$this->is_blocked && !$this->deleted_at;
+        return $this->status === self::STATUS_ACTIVE;
     }
 
     public function isArchived(): bool
     {
-        return $this->is_archived;
+        return $this->status === self::STATUS_ARCHIVED;
     }
 
     public function isBlocked(): bool
     {
-        return $this->is_blocked;
+        return $this->status === self::STATUS_BLOCKED;
     }
 
     public function isDeleted(): bool
     {
-        return !is_null($this->deleted_at);
+        return $this->status === self::STATUS_DELETED;
     }
 
     public function hasUnreadMessages(User $user): bool
@@ -242,14 +253,20 @@ class Conversation extends Model
 
     public function getUnreadCount(User $user): int
     {
-        $participant = $this->participants()->where('user_id', $user->id)->first();
-        return $participant ? $participant->pivot->unread_count : 0;
+        if ($this->user_one_id === $user->id) {
+            return $this->user_one_unread_count;
+        } elseif ($this->user_two_id === $user->id) {
+            return $this->user_two_unread_count;
+        }
+        return 0;
     }
 
     public function getOtherParticipant(User $user): ?User
     {
-        if ($this->isDirect()) {
-            return $this->participants()->where('user_id', '!=', $user->id)->first();
+        if ($this->user_one_id === $user->id) {
+            return $this->userTwo;
+        } elseif ($this->user_two_id === $user->id) {
+            return $this->userOne;
         }
         return null;
     }
@@ -260,22 +277,8 @@ class Conversation extends Model
             return $this->name;
         }
 
-        if ($this->isDirect()) {
-            $otherUser = $this->getOtherParticipant($user);
-            return $otherUser ? $otherUser->first_name : 'Unknown User';
-        }
-
-        if ($this->isGroup()) {
-            $participantNames = $this->participants()
-                ->where('user_id', '!=', $user->id)
-                ->pluck('first_name')
-                ->take(3)
-                ->toArray();
-            
-            return implode(', ', $participantNames) . ($this->participants()->count() > 4 ? '...' : '');
-        }
-
-        return 'Conversation';
+        $otherUser = $this->getOtherParticipant($user);
+        return $otherUser ? $otherUser->first_name : 'Unknown User';
     }
 
     public function getLastMessagePreview(): ?string
@@ -315,79 +318,63 @@ class Conversation extends Model
 
     public function addParticipant(User $user, string $role = 'member'): bool
     {
-        if ($this->participants()->where('user_id', $user->id)->exists()) {
-            return false;
-        }
-
-        $this->participants()->attach($user->id, [
-            'role' => $role,
-            'joined_at' => now(),
-            'is_muted' => false,
-        ]);
-
+        // For this schema, participants are already defined by user_one_id and user_two_id
+        // This method is kept for compatibility but doesn't need to do anything
         return true;
     }
 
     public function removeParticipant(User $user): bool
     {
-        $this->participants()->updateExistingPivot($user->id, [
-            'left_at' => now(),
-        ]);
-
+        // For this schema, participants are already defined by user_one_id and user_two_id
+        // This method is kept for compatibility but doesn't need to do anything
         return true;
     }
 
     public function archive(User $user): bool
     {
         return $this->update([
-            'is_archived' => true,
-            'archived_at' => now(),
-            'archived_by' => $user->id,
+            'status' => self::STATUS_ARCHIVED,
         ]);
     }
 
     public function unarchive(): bool
     {
         return $this->update([
-            'is_archived' => false,
-            'archived_at' => null,
-            'archived_by' => null,
+            'status' => self::STATUS_ACTIVE,
         ]);
     }
 
     public function block(User $user, string $reason = null): bool
     {
         return $this->update([
-            'is_blocked' => true,
+            'status' => self::STATUS_BLOCKED,
             'blocked_at' => now(),
             'blocked_by' => $user->id,
-            'blocked_reason' => $reason,
+            'block_reason' => $reason,
         ]);
     }
 
     public function unblock(): bool
     {
         return $this->update([
-            'is_blocked' => false,
+            'status' => self::STATUS_ACTIVE,
             'blocked_at' => null,
             'blocked_by' => null,
-            'blocked_reason' => null,
+            'block_reason' => null,
         ]);
     }
 
     public function softDelete(User $user): bool
     {
         return $this->update([
-            'deleted_at' => now(),
-            'deleted_by' => $user->id,
+            'status' => self::STATUS_DELETED,
         ]);
     }
 
     public function restore(): bool
     {
         return $this->update([
-            'deleted_at' => null,
-            'deleted_by' => null,
+            'status' => self::STATUS_ACTIVE,
         ]);
     }
 
@@ -401,67 +388,48 @@ class Conversation extends Model
 
     public function incrementUnreadCount(User $user): bool
     {
-        $this->participants()->updateExistingPivot($user->id, [
-            'unread_count' => \DB::raw('unread_count + 1'),
-        ]);
-
+        if ($this->user_one_id === $user->id) {
+            $this->increment('user_one_unread_count');
+        } elseif ($this->user_two_id === $user->id) {
+            $this->increment('user_two_unread_count');
+        }
         return true;
     }
 
     public function resetUnreadCount(User $user): bool
     {
-        $this->participants()->updateExistingPivot($user->id, [
-            'unread_count' => 0,
-        ]);
-
+        if ($this->user_one_id === $user->id) {
+            $this->update(['user_one_unread_count' => 0]);
+        } elseif ($this->user_two_id === $user->id) {
+            $this->update(['user_two_unread_count' => 0]);
+        }
         return true;
     }
 
     public function muteParticipant(User $user, ?string $until = null): bool
     {
-        $this->participants()->updateExistingPivot($user->id, [
-            'is_muted' => true,
-            'muted_until' => $until,
-        ]);
-
+        // Muting is not implemented in this schema
         return true;
     }
 
     public function unmuteParticipant(User $user): bool
     {
-        $this->participants()->updateExistingPivot($user->id, [
-            'is_muted' => false,
-            'muted_until' => null,
-        ]);
-
+        // Muting is not implemented in this schema
         return true;
     }
 
     public function isParticipantMuted(User $user): bool
     {
-        $participant = $this->participants()->where('user_id', $user->id)->first();
-        
-        if (!$participant) {
-            return false;
-        }
-
-        if (!$participant->pivot->is_muted) {
-            return false;
-        }
-
-        if ($participant->pivot->muted_until && now()->gt($participant->pivot->muted_until)) {
-            // Auto-unmute if mute period has expired
-            $this->unmuteParticipant($user);
-            return false;
-        }
-
-        return true;
+        // Muting is not implemented in this schema
+        return false;
     }
 
     public function getParticipantRole(User $user): ?string
     {
-        $participant = $this->participants()->where('user_id', $user->id)->first();
-        return $participant ? $participant->pivot->role : null;
+        if ($this->created_by === $user->id) {
+            return 'creator';
+        }
+        return 'member';
     }
 
     public function canSendMessage(User $user): bool
@@ -470,26 +438,22 @@ class Conversation extends Model
             return false;
         }
 
-        if ($this->isParticipantMuted($user)) {
-            return false;
-        }
-
         if ($this->isBlocked()) {
             return false;
         }
 
-        return $this->participants()->where('user_id', $user->id)->exists();
+        return $this->user_one_id === $user->id || $this->user_two_id === $user->id;
     }
 
     public function getSettings(): array
     {
-        return $this->settings ?? [];
+        return $this->conversation_settings ?? [];
     }
 
     public function updateSettings(array $settings): bool
     {
         return $this->update([
-            'settings' => array_merge($this->getSettings(), $settings)
+            'conversation_settings' => array_merge($this->getSettings(), $settings)
         ]);
     }
 
@@ -497,36 +461,30 @@ class Conversation extends Model
     public static function createDirectConversation(User $user1, User $user2): self
     {
         $conversation = self::create([
-            'type' => self::TYPE_DIRECT,
+            'user_one_id' => $user1->id,
+            'user_two_id' => $user2->id,
+            'type' => self::TYPE_MATCH,
             'is_group' => false,
+            'status' => self::STATUS_ACTIVE,
             'created_by' => $user1->id,
         ]);
-
-        // Add participants
-        $conversation->addParticipant($user1, 'creator');
-        $conversation->addParticipant($user2, 'member');
 
         return $conversation;
     }
 
     public static function createGroupConversation(User $creator, array $participants, string $name = null): self
     {
+        // For group conversations, we'll use the creator as user_one and set user_two to null
+        // We'll need to modify the migration to allow nullable user_two_id for groups
         $conversation = self::create([
+            'user_one_id' => $creator->id,
+            'user_two_id' => null, // Groups don't have a specific second user
             'name' => $name,
-            'type' => self::TYPE_GROUP,
+            'type' => self::TYPE_MATCH,
             'is_group' => true,
+            'status' => self::STATUS_ACTIVE,
             'created_by' => $creator->id,
         ]);
-
-        // Add creator
-        $conversation->addParticipant($creator, 'creator');
-
-        // Add other participants
-        foreach ($participants as $participant) {
-            if ($participant->id !== $creator->id) {
-                $conversation->addParticipant($participant, 'member');
-            }
-        }
 
         return $conversation;
     }
@@ -534,18 +492,18 @@ class Conversation extends Model
     public static function createMatchConversation(UserMatch $match): self
     {
         $conversation = self::create([
+            'user_one_id' => $match->user_id,
+            'user_two_id' => $match->matched_user_id,
+            'match_id' => $match->id,
             'type' => self::TYPE_MATCH,
             'is_group' => false,
+            'status' => self::STATUS_ACTIVE,
             'created_by' => $match->user_id,
             'metadata' => [
                 'match_id' => $match->id,
                 'match_score' => $match->compatibility_score,
             ]
         ]);
-
-        // Add both users from the match
-        $conversation->addParticipant($match->user, 'member');
-        $conversation->addParticipant($match->matchedUser, 'member');
 
         // Create system message for match
         Message::createMatchCreatedMessage($conversation);
@@ -555,16 +513,16 @@ class Conversation extends Model
 
     public static function findDirectConversation(User $user1, User $user2): ?self
     {
-        return self::where('type', self::TYPE_DIRECT)
+        return self::where('type', self::TYPE_MATCH)
                   ->where('is_group', false)
-                  ->whereHas('participants', function ($q) use ($user1) {
-                      $q->where('user_id', $user1->id);
-                  })
-                  ->whereHas('participants', function ($q) use ($user2) {
-                      $q->where('user_id', $user2->id);
-                  })
-                  ->whereDoesntHave('participants', function ($q) use ($user1, $user2) {
-                      $q->whereNotIn('user_id', [$user1->id, $user2->id]);
+                  ->where(function ($q) use ($user1, $user2) {
+                      $q->where(function ($subQ) use ($user1, $user2) {
+                          $subQ->where('user_one_id', $user1->id)
+                               ->where('user_two_id', $user2->id);
+                      })->orWhere(function ($subQ) use ($user1, $user2) {
+                          $subQ->where('user_one_id', $user2->id)
+                               ->where('user_two_id', $user1->id);
+                      });
                   })
                   ->first();
     }

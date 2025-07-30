@@ -52,25 +52,22 @@ class MessageSent implements ShouldBroadcast
                 'id' => $this->message->id,
                 'conversation_id' => $this->message->conversation_id,
                 'sender_id' => $this->message->sender_id,
-                'content' => $this->message->content,
-                'message_type' => $this->message->message_type,
-                'attachment_url' => $this->message->attachment_url,
-                'attachment_type' => $this->message->attachment_type,
+                'content' => $this->message->message,
+                'message_type' => $this->message->type,
+                'media_files' => $this->message->media_files,
                 'reply_to_id' => $this->message->reply_to_id,
-                'forwarded_from_id' => $this->message->forwarded_from_id,
-                'is_edited' => $this->message->is_edited,
                 'created_at' => $this->message->created_at->toISOString(),
                 'updated_at' => $this->message->updated_at->toISOString(),
             ],
             'sender' => [
                 'id' => $this->sender->id,
-                'name' => $this->sender->name,
-                'profile_photo_url' => $this->sender->profile_photo_url,
+                'name' => $this->sender->first_name,
+                'profile_photo_url' => $this->sender->profilePicture?->file_path ?? null,
             ],
             'conversation' => [
                 'id' => $this->conversation->id,
-                'type' => $this->conversation->conversation_type,
-                'display_name' => $this->conversation->getDisplayName(),
+                'type' => $this->conversation->type,
+                'display_name' => $this->conversation->getDisplayName($this->sender) ?? 'Unknown',
                 'last_message_at' => $this->conversation->last_message_at?->toISOString(),
             ],
         ];
@@ -89,6 +86,6 @@ class MessageSent implements ShouldBroadcast
      */
     public function broadcastWhen(): bool
     {
-        return $this->message->message_type !== Message::MESSAGE_TYPE_SYSTEM;
+        return $this->message->type !== Message::TYPE_SYSTEM;
     }
 } 

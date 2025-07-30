@@ -31,7 +31,8 @@ return new class extends Migration
             $table->enum('priority', ['low', 'medium', 'high', 'urgent'])->default('medium');
             $table->enum('category', [
                 'match', 'message', 'like', 'super_like', 'profile_view', 
-                'subscription', 'payment', 'system', 'admin', 'promotion'
+                'subscription', 'payment', 'system', 'admin', 'promotion',
+                'matching', 'communication', 'profile'
             ]);
             
             // Delivery channels

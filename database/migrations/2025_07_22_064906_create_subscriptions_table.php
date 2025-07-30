@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             
             // Subscription details
-            $table->enum('plan_type', ['basic', 'premium', 'platinum'])->default('basic');
+            $table->enum('plan_type', ['basic', 'premium', 'platinum', 'premium_monthly', 'premium_quarterly', 'premium_annual'])->default('basic');
             $table->enum('status', ['pending', 'active', 'expired', 'cancelled', 'failed', 'refunded'])
                   ->default('pending');
             $table->enum('billing_cycle', ['monthly', 'quarterly', 'semi_annual', 'annual'])

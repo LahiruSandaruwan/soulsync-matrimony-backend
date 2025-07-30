@@ -241,6 +241,7 @@ class SendMatchNotification implements ShouldQueue
             'priority' => $priority,
             'is_read' => false,
             'expires_at' => now()->addDays(30), // Notifications expire after 30 days
+            'actor_id' => $this->matchedUser->id, // Set the actor to the matched user
         ]);
     }
 

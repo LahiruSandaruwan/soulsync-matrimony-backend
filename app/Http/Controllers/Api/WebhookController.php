@@ -101,7 +101,7 @@ class WebhookController extends Controller
                 'body_size' => strlen($request->getContent()),
             ]);
 
-            $result = $this->payhereService->processWebhook($request);
+            $result = $this->payhereService->processWebhook($request->all());
 
             if ($result['success']) {
                 return response()->json(['status' => 'success'], 200);
@@ -131,7 +131,7 @@ class WebhookController extends Controller
                 'body_size' => strlen($request->getContent()),
             ]);
 
-            $result = $this->webxpayService->processWebhook($request);
+            $result = $this->webxpayService->processWebhook($request->all());
 
             if ($result['success']) {
                 return response()->json(['status' => 'success'], 200);

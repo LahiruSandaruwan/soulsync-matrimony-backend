@@ -21,6 +21,7 @@ class NotificationController extends Controller
             'page' => 'sometimes|integer|min:1',
             'limit' => 'sometimes|integer|min:1|max:100',
             'type' => 'sometimes|in:match,message,like,super_like,profile_view,subscription,admin,system',
+            'category' => 'sometimes|in:match,message,like,super_like,profile_view,subscription,payment,system,admin,promotion,matching,communication,profile',
             'status' => 'sometimes|in:unread,read,all',
         ]);
 
@@ -36,7 +37,9 @@ class NotificationController extends Controller
             $page = $request->get('page', 1);
             $limit = $request->get('limit', 50);
             $type = $request->get('type');
+            $category = $request->get('category');
             $status = $request->get('status', 'all');
+            $unreadOnly = $request->get('unread_only', false);
             $offset = ($page - 1) * $limit;
 
             // Build query
@@ -47,11 +50,21 @@ class NotificationController extends Controller
                 $query->where('type', $type);
             }
 
-            if ($status === 'unread') {
+            if ($category) {
+                $query->where('category', $category);
+            }
+
+            if ($unreadOnly || $status === 'unread') {
                 $query->whereNull('read_at');
             } elseif ($status === 'read') {
                 $query->whereNotNull('read_at');
             }
+
+            // Filter out expired notifications
+            $query->where(function ($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '>', now());
+            });
 
             $totalCount = $query->count();
             $notifications = $query->offset($offset)->limit($limit)->get();
@@ -62,8 +75,14 @@ class NotificationController extends Controller
                     'id' => $notification->id,
                     'type' => $notification->type,
                     'title' => $notification->title,
-                    'body' => $notification->body,
+                    'message' => $notification->message,
                     'data' => $notification->data ? json_decode($notification->data, true) : null,
+                    'priority' => $notification->priority,
+                    'category' => $notification->category,
+                    'action_url' => $notification->getActionUrl(),
+                    'action_text' => $notification->action_text,
+                    'metadata' => $notification->metadata,
+                    'is_high_priority' => $notification->priority === 'high' || $notification->priority === 'urgent',
                     'is_read' => !is_null($notification->read_at),
                     'read_at' => $notification->read_at,
                     'created_at' => $notification->created_at,
@@ -73,14 +92,13 @@ class NotificationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'notifications' => $formattedNotifications,
-                    'pagination' => [
-                        'current_page' => $page,
-                        'total_notifications' => $totalCount,
-                        'has_more' => ($offset + $limit) < $totalCount,
-                    ],
-                    'unread_count' => $user->notifications()->whereNull('read_at')->count(),
+                'data' => $formattedNotifications,
+                'meta' => [
+                    'current_page' => $page,
+                    'total' => $totalCount,
+                    'per_page' => $limit,
+                    'last_page' => ceil($totalCount / $limit),
+                    'has_more' => ($offset + $limit) < $totalCount,
                 ]
             ]);
 
@@ -382,6 +400,133 @@ class NotificationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send test notification',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Show a specific notification
+     */
+    public function show(Request $request, Notification $notification): JsonResponse
+    {
+        $user = $request->user();
+
+        // Check if user owns this notification
+        if ($notification->user_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden'
+            ], 403);
+        }
+
+                    return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $notification->id,
+                    'type' => $notification->type,
+                    'title' => $notification->title,
+                    'message' => $notification->message,
+                    'data' => $notification->data ? json_decode($notification->data, true) : null,
+                    'priority' => $notification->priority,
+                    'category' => $notification->category,
+                    'action_url' => $notification->getActionUrl(),
+                    'action_text' => $notification->action_text,
+                    'metadata' => $notification->metadata,
+                    'is_read' => !is_null($notification->read_at),
+                    'read_at' => $notification->read_at,
+                    'created_at' => $notification->created_at,
+                    'time_ago' => $notification->created_at->diffForHumans(),
+                ]
+            ]);
+    }
+
+    /**
+     * Mark batch of notifications as read
+     */
+    public function markBatchAsRead(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'batch_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $batchId = $request->batch_id;
+            
+            // Mark notifications with the batch_id as read and remove batch_id
+            $updatedCount = $user->notifications()
+                ->where('batch_id', $batchId)
+                ->whereNull('read_at')
+                ->update(['read_at' => now(), 'batch_id' => null]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Batch notifications marked as read',
+                'data' => [
+                    'updated_count' => $updatedCount,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to mark batch as read',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Cleanup old notifications
+     */
+    public function cleanup(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'older_than_days' => 'required|integer|min:1|max:365',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $olderThanDays = $request->older_than_days;
+            $cutoffDate = now()->subDays($olderThanDays);
+            
+            // Delete old notifications that are not persistent
+            $deletedCount = $user->notifications()
+                ->where('created_at', '<', $cutoffDate)
+                ->where('is_persistent', false)
+                ->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Old notifications cleaned up',
+                'data' => [
+                    'deleted_count' => $deletedCount,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to cleanup notifications',
                 'error' => $e->getMessage()
             ], 500);
         }

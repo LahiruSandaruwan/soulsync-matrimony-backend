@@ -149,6 +149,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('{user}/super-like', [MatchController::class, 'superLike']);
         Route::post('{user}/dislike', [MatchController::class, 'dislike']);
         Route::post('{user}/block', [MatchController::class, 'block']);
+        Route::post('{match}/boost', [MatchController::class, 'boost']);
         Route::get('liked-me', [MatchController::class, 'whoLikedMe']);
         Route::get('mutual', [MatchController::class, 'mutualMatches']);
     });
@@ -209,15 +210,19 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('process-renewals', [SubscriptionController::class, 'processRenewals']);
         Route::get('history', [SubscriptionController::class, 'history']);
         Route::post('payment/verify', [SubscriptionController::class, 'verifyPayment']);
+        Route::post('payment/refund', [SubscriptionController::class, 'refund']);
     });
     
     // Notifications
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
-        Route::post('{notification}/read', [NotificationController::class, 'markAsRead']);
-        Route::post('read-all', [NotificationController::class, 'markAllAsRead']);
-        Route::delete('{notification}', [NotificationController::class, 'destroy']);
         Route::get('unread-count', [NotificationController::class, 'unreadCount']);
+        Route::post('read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::post('batch/read', [NotificationController::class, 'markBatchAsRead']);
+        Route::post('cleanup', [NotificationController::class, 'cleanup']);
+        Route::get('{notification}', [NotificationController::class, 'show']);
+        Route::post('{notification}/read', [NotificationController::class, 'markAsRead']);
+        Route::delete('{notification}', [NotificationController::class, 'destroy']);
     });
     
     // Settings
@@ -264,7 +269,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 });
 
 // Admin routes (role-based access)
-Route::prefix('v1/admin')->middleware(['auth:sanctum', 'role:admin|moderator'])->group(function () {
+Route::prefix('v1/admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
     
     // Dashboard
     Route::get('dashboard', [DashboardController::class, 'index']);
@@ -273,6 +278,9 @@ Route::prefix('v1/admin')->middleware(['auth:sanctum', 'role:admin|moderator'])-
     // User management
     Route::prefix('users')->group(function () {
         Route::get('/', [AdminUserController::class, 'index']);
+        Route::get('analytics', [AdminUserController::class, 'analytics']);
+        Route::post('export', [AdminUserController::class, 'export']);
+        Route::post('bulk-action', [AdminUserController::class, 'bulkAction']);
         Route::get('{user}', [AdminUserController::class, 'show']);
         Route::put('{user}/status', [AdminUserController::class, 'updateStatus']);
         Route::put('{user}/profile-status', [AdminUserController::class, 'updateProfileStatus']);
@@ -310,6 +318,12 @@ Route::prefix('v1/admin')->middleware(['auth:sanctum', 'role:admin|moderator'])-
         Route::get('/', [AdminSettingsController::class, 'index']);
         Route::put('/', [AdminSettingsController::class, 'update']);
     });
+    
+    // System health
+    Route::get('system/health', [AdminSettingsController::class, 'systemHealth']);
+    
+    // Revenue analytics
+    Route::get('revenue/analytics', [AdminSettingsController::class, 'revenueAnalytics']);
 });
 
 // Webhook routes (no authentication required)

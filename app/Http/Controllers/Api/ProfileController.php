@@ -73,6 +73,10 @@ class ProfileController extends Controller
     public function update(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            // Basic user information
+            'first_name' => 'sometimes|string|max:50',
+            'last_name' => 'sometimes|string|max:50',
+            
             // Physical attributes
             'height_cm' => 'sometimes|integer|min:100|max:250',
             'weight_kg' => 'sometimes|numeric|min:30|max:200',
@@ -150,11 +154,20 @@ class ProfileController extends Controller
             $user = $request->user();
             $data = $validator->validated();
             
+            // Separate user data from profile data
+            $userData = array_intersect_key($data, array_flip(['first_name', 'last_name']));
+            $profileData = array_diff_key($data, array_flip(['first_name', 'last_name']));
+            
+            // Update user basic information if provided
+            if (!empty($userData)) {
+                $user->update($userData);
+            }
+            
             // Get or create profile
             $profile = $user->profile ?? $user->profile()->create([]);
             
             // Update profile
-            $profile->update($data);
+            $profile->update($profileData);
             
             // Update user's profile completion
             $completionPercentage = $profile->calculateCompletionPercentage();

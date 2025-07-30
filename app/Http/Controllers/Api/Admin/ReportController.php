@@ -32,7 +32,7 @@ class ReportController extends Controller
             $query = Report::with([
                 'reporter:id,first_name,last_name,email',
                 'reportedUser:id,first_name,last_name,email,status',
-                'assignedModerator:id,first_name,last_name'
+                'assignedAdmin:id,first_name,last_name'
             ]);
 
             // Apply filters
@@ -41,7 +41,7 @@ class ReportController extends Controller
             }
 
             if ($reason) {
-                $query->where('reason', $reason);
+                $query->where('type', $reason);
             }
 
             if ($severity) {
@@ -75,14 +75,14 @@ class ReportController extends Controller
                         'email' => $report->reportedUser->email,
                         'status' => $report->reportedUser->status,
                     ],
-                    'reason' => $report->reason,
+                    'type' => $report->type,
                     'description' => $report->description,
                     'severity' => $report->severity,
                     'status' => $report->status,
                     'priority' => $report->priority,
-                    'assigned_moderator' => $report->assignedModerator ? [
-                        'id' => $report->assignedModerator->id,
-                        'name' => $report->assignedModerator->first_name . ' ' . $report->assignedModerator->last_name,
+                    'assigned_moderator' => $report->assignedAdmin ? [
+                        'id' => $report->assignedAdmin->id,
+                        'name' => $report->assignedAdmin->first_name . ' ' . $report->assignedAdmin->last_name,
                     ] : null,
                     'evidence_count' => $report->evidence_data ? count(json_decode($report->evidence_data, true)['photos'] ?? []) : 0,
                     'created_at' => $report->created_at,
@@ -101,17 +101,17 @@ class ReportController extends Controller
                     ->groupBy('severity')
                     ->pluck('count', 'severity')
                     ->toArray(),
-                'by_reason' => Report::selectRaw('reason, count(*) as count')
-                    ->groupBy('reason')
+                'by_reason' => Report::selectRaw('type, count(*) as count')
+                    ->groupBy('type')
                     ->orderBy('count', 'desc')
                     ->limit(5)
-                    ->pluck('count', 'reason')
+                    ->pluck('count', 'type')
                     ->toArray(),
             ];
 
             return response()->json([
                 'success' => true,
-                'data' => $reports,
+                'data' => $reports->getCollection(),
                 'summary' => $summary,
                 'filters' => [
                     'statuses' => ['pending', 'in_progress', 'resolved', 'dismissed'],
@@ -142,7 +142,7 @@ class ReportController extends Controller
                 'reportedUser:id,first_name,last_name,email,phone,country_code,status,last_active_at,created_at',
                 'reportedUser.profile',
                 'reportedUser.photos',
-                'assignedModerator:id,first_name,last_name,email'
+                'assignedAdmin:id,first_name,last_name,email'
             ]);
 
             // Get related reports about the same user
@@ -164,20 +164,19 @@ class ReportController extends Controller
             $evidenceData = $report->evidence_data ? json_decode($report->evidence_data, true) : null;
 
             $data = [
-                'report' => [
-                    'id' => $report->id,
-                    'reason' => $report->reason,
-                    'description' => $report->description,
-                    'severity' => $report->severity,
-                    'status' => $report->status,
-                    'priority' => $report->priority,
-                    'context' => $report->context,
-                    'moderator_notes' => $report->moderator_notes,
-                    'resolution' => $report->resolution,
-                    'created_at' => $report->created_at,
-                    'updated_at' => $report->updated_at,
-                    'resolved_at' => $report->resolved_at,
-                ],
+                'id' => $report->id,
+                'type' => $report->type,
+                'reason' => $report->reason,
+                'description' => $report->description,
+                'severity' => $report->severity,
+                'status' => $report->status,
+                'priority' => $report->priority,
+                'context' => $report->context,
+                'moderator_notes' => $report->moderator_notes,
+                'resolution' => $report->resolution,
+                'created_at' => $report->created_at,
+                'updated_at' => $report->updated_at,
+                'resolved_at' => $report->resolved_at,
                 'reporter' => [
                     'id' => $report->reporter->id,
                     'name' => $report->reporter->first_name . ' ' . $report->reporter->last_name,
@@ -248,7 +247,7 @@ class ReportController extends Controller
     public function updateStatus(Request $request, Report $report): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'status' => 'required|in:pending,in_progress,resolved,dismissed',
+            'status' => 'required|in:pending,under_review,resolved,dismissed',
             'moderator_notes' => 'sometimes|string|max:1000',
             'assigned_to' => 'sometimes|integer|exists:users,id',
             'priority' => 'sometimes|in:low,medium,high,urgent',
@@ -497,14 +496,15 @@ class ReportController extends Controller
         $admin = User::find($moderatorId);
         \App\Models\UserWarning::issueWarning(
             $user,
-            $admin,
-            'inappropriate_content', // category
-            'moderate', // severity
-            'Account Warning',
+            'inappropriate_content', // type
+            3, // severity (moderate)
             $reason,
-            ['messaging_disabled'], // temporary restrictions
-            null, // no related report
-            null // no evidence
+            'Account Warning',
+            ['messaging_disabled'], // evidence
+            $admin, // issuedBy
+            null, // reportId
+            null, // templateId
+            null // expiresAt
         );
     }
 

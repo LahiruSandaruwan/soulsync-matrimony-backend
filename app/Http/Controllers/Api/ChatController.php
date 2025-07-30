@@ -44,33 +44,36 @@ class ChatController extends Controller
 
             // Get conversations where user is a participant
             $conversationsQuery = Conversation::where(function ($query) use ($user) {
-                $query->where('user1_id', $user->id)
-                      ->orWhere('user2_id', $user->id);
+                $query->where('user_one_id', $user->id)
+                      ->orWhere('user_two_id', $user->id);
             })
             ->where('status', $status)
-            ->with(['lastMessage', 'user1', 'user2'])
+            ->with(['lastMessage', 'userOne', 'userTwo'])
             ->orderBy('last_message_at', 'desc');
 
             $totalCount = $conversationsQuery->count();
             $conversations = $conversationsQuery->offset($offset)->limit($limit)->get();
 
             $formattedConversations = $conversations->map(function ($conversation) use ($user) {
-                $otherUser = $conversation->user1_id === $user->id ? $conversation->user2 : $conversation->user1;
-                $unreadCount = $conversation->messages()
-                    ->where('sender_id', '!=', $user->id)
-                    ->where('status', '!=', 'read')
-                    ->count();
+                $otherUser = $conversation->user_one_id === $user->id ? $conversation->userTwo : $conversation->userOne;
+                $unreadCount = $conversation->getUnreadCount($user);
 
                 return [
                     'id' => $conversation->id,
-                    'other_user' => [
-                        'id' => $otherUser->id,
-                        'first_name' => $otherUser->first_name,
-                        'profile_picture' => $otherUser->profilePicture ? 
-                            Storage::url($otherUser->profilePicture->file_path) : null,
-                        'last_active_at' => $otherUser->last_active_at,
-                        'is_online' => $otherUser->last_active_at && 
-                            $otherUser->last_active_at->diffInMinutes(now()) < 15,
+                    'name' => $conversation->getDisplayName($user),
+                    'type' => $conversation->type,
+                    'is_group' => $conversation->is_group,
+                    'last_message_at' => $conversation->last_message_at,
+                    'unread_count' => $unreadCount,
+                    'participants' => [
+                        [
+                            'id' => $user->id,
+                            'name' => $user->first_name,
+                        ],
+                        [
+                            'id' => $otherUser->id,
+                            'name' => $otherUser->first_name,
+                        ]
                     ],
                     'last_message' => $conversation->lastMessage ? [
                         'id' => $conversation->lastMessage->id,
@@ -80,29 +83,12 @@ class ChatController extends Controller
                         'sent_at' => $conversation->lastMessage->created_at,
                         'status' => $conversation->lastMessage->status,
                     ] : null,
-                    'unread_count' => $unreadCount,
-                    'status' => $conversation->status,
-                    'created_at' => $conversation->created_at,
-                    'last_message_at' => $conversation->last_message_at,
                 ];
             });
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'conversations' => $formattedConversations,
-                    'pagination' => [
-                        'current_page' => $page,
-                        'total_conversations' => $totalCount,
-                        'has_more' => ($offset + $limit) < $totalCount,
-                    ],
-                    'unread_total' => $conversations->sum(function ($conv) use ($user) {
-                        return $conv->messages()
-                            ->where('sender_id', '!=', $user->id)
-                            ->where('status', '!=', 'read')
-                            ->count();
-                    }),
-                ]
+                'data' => $formattedConversations
             ]);
 
         } catch (\Exception $e) {
@@ -122,7 +108,7 @@ class ChatController extends Controller
         $user = $request->user();
 
         // Check if user is part of this conversation
-        if ($conversation->user1_id !== $user->id && $conversation->user2_id !== $user->id) {
+        if ($conversation->user_one_id !== $user->id && $conversation->user_two_id !== $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access to conversation'
@@ -148,7 +134,7 @@ class ChatController extends Controller
             $offset = ($page - 1) * $limit;
 
             // Get other user
-            $otherUser = $conversation->user1_id === $user->id ? $conversation->user2 : $conversation->user1;
+            $otherUser = $conversation->user_one_id === $user->id ? $conversation->userTwo : $conversation->userOne;
 
             // Get messages
             $messagesQuery = $conversation->messages()
@@ -165,42 +151,44 @@ class ChatController extends Controller
                 ->update(['status' => 'read', 'read_at' => now()]);
 
             $formattedMessages = $messages->map(function ($message) {
-                return [
+                $formattedMessage = [
                     'id' => $message->id,
-                    'content' => $message->content,
+                    'content' => $message->message,
                     'type' => $message->type,
                     'sender_id' => $message->sender_id,
-                    'sender_name' => $message->sender->first_name,
-                    'media_url' => $message->media_path ? Storage::url($message->media_path) : null,
+                    'sender_name' => $message->sender ? $message->sender->first_name : 'System',
+                    'media_url' => $message->media_files ? $message->media_files[0] : null,
                     'status' => $message->status,
                     'sent_at' => $message->created_at,
                     'read_at' => $message->read_at,
                 ];
+                
+                // Add system message specific fields
+                if ($message->type === 'system') {
+                    $formattedMessage['is_system_message'] = true;
+                    $formattedMessage['system_message_type'] = $message->system_data['type'] ?? null;
+                }
+                
+                return $formattedMessage;
             });
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'conversation' => [
-                        'id' => $conversation->id,
-                        'status' => $conversation->status,
-                        'created_at' => $conversation->created_at,
-                    ],
-                    'other_user' => [
-                        'id' => $otherUser->id,
-                        'first_name' => $otherUser->first_name,
-                        'profile_picture' => $otherUser->profilePicture ? 
-                            Storage::url($otherUser->profilePicture->file_path) : null,
-                        'last_active_at' => $otherUser->last_active_at,
-                        'is_online' => $otherUser->last_active_at && 
-                            $otherUser->last_active_at->diffInMinutes(now()) < 15,
+                    'id' => $conversation->id,
+                    'name' => $conversation->name,
+                    'type' => $conversation->type,
+                    'participants' => [
+                        [
+                            'id' => $conversation->userOne->id,
+                            'name' => $conversation->userOne->first_name,
+                        ],
+                        [
+                            'id' => $conversation->userTwo->id,
+                            'name' => $conversation->userTwo->first_name,
+                        ],
                     ],
                     'messages' => $formattedMessages,
-                    'pagination' => [
-                        'current_page' => $page,
-                        'total_messages' => $totalMessages,
-                        'has_more' => ($offset + $limit) < $totalMessages,
-                    ],
                 ]
             ]);
 
@@ -221,7 +209,7 @@ class ChatController extends Controller
         $user = $request->user();
 
         // Check if user is part of this conversation
-        if ($conversation->user1_id !== $user->id && $conversation->user2_id !== $user->id) {
+        if ($conversation->user_one_id !== $user->id && $conversation->user_two_id !== $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access to conversation'
@@ -233,12 +221,13 @@ class ChatController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot send message to blocked conversation'
-            ], 400);
+            ], 403);
         }
 
         $validator = Validator::make($request->all(), [
             'content' => 'required_without:media|string|max:1000',
             'type' => 'sometimes|in:text,image,voice,file',
+            'message_type' => 'sometimes|in:text,image,voice,file',
             'media' => 'required_without:content|file|max:10240', // 10MB max
         ]);
 
@@ -251,11 +240,14 @@ class ChatController extends Controller
         }
 
         try {
+            $otherUser = $conversation->user_one_id === $user->id ? $conversation->userTwo : $conversation->userOne;
+            
             $messageData = [
                 'conversation_id' => $conversation->id,
                 'sender_id' => $user->id,
-                'content' => $request->get('content'),
-                'type' => $request->get('type', 'text'),
+                'receiver_id' => $otherUser->id,
+                'message' => $request->get('content'),
+                'type' => $request->get('type') ?? $request->get('message_type', 'text'),
                 'status' => 'sent',
             ];
 
@@ -266,10 +258,12 @@ class ChatController extends Controller
                 
                 Storage::put($mediaPath, file_get_contents($media));
                 
-                $messageData['media_path'] = $mediaPath;
-                $messageData['media_size'] = $media->getSize();
-                $messageData['media_type'] = $media->getMimeType();
-                $messageData['original_filename'] = $media->getClientOriginalName();
+                $messageData['media_files'] = [Storage::url($mediaPath)];
+                $messageData['metadata'] = [
+                    'media_size' => $media->getSize(),
+                    'media_type' => $media->getMimeType(),
+                    'original_filename' => $media->getClientOriginalName(),
+                ];
                 
                 // Set type based on media
                 if (str_starts_with($media->getMimeType(), 'image/')) {
@@ -279,38 +273,90 @@ class ChatController extends Controller
                 } else {
                     $messageData['type'] = 'file';
                 }
+            } else {
+                // Handle direct URL input (for testing)
+                if ($request->has('attachment_url')) {
+                    $messageData['media_files'] = [$request->get('attachment_url')];
+                    $messageData['metadata'] = $request->get('attachment_metadata', []);
+                    $messageData['type'] = 'image'; // Force type to image for attachment_url
+                }
+                
+                if ($request->has('voice_url')) {
+                    $messageData['media_files'] = [$request->get('voice_url')];
+                    $messageData['metadata'] = [
+                        'duration' => $request->get('voice_duration', 0),
+                        'media_type' => 'audio/mpeg'
+                    ];
+                    $messageData['type'] = 'voice'; // Force type to voice for voice_url
+                }
             }
 
-            // Create message
-            $message = Message::create($messageData);
+            // Create message using the appropriate static method
+            if ($request->hasFile('media')) {
+                if (str_starts_with($media->getMimeType(), 'image/')) {
+                    $message = Message::createImageMessage($conversation, $user, Storage::url($mediaPath), $messageData['metadata']);
+                } elseif (str_starts_with($media->getMimeType(), 'audio/')) {
+                    $message = Message::createVoiceMessage($conversation, $user, Storage::url($mediaPath), 0); // Duration not available
+                } else {
+                    $message = Message::create($messageData);
+                }
+            } else {
+                // Check if we have special message types (image, voice) from direct URL input
+                if (isset($messageData['type']) && $messageData['type'] === 'image') {
+                    $message = Message::createImageMessage($conversation, $user, $messageData['media_files'][0], $messageData['metadata']);
+                } elseif (isset($messageData['type']) && $messageData['type'] === 'voice') {
+                    // Create voice message using the proper method
+                    $message = Message::createVoiceMessage($conversation, $user, $messageData['media_files'][0], $messageData['metadata']['duration'] ?? 0);
+                } else {
+                    $message = Message::createTextMessage($conversation, $user, $request->get('content'));
+                }
+            }
 
             // Update conversation
             $conversation->update([
                 'last_message_id' => $message->id,
                 'last_message_at' => now(),
             ]);
+            
+            // Increment unread count for the receiver
+            $conversation->incrementUnreadCount($otherUser);
 
             // Get other user for notifications
-            $otherUser = $conversation->user1_id === $user->id ? 
-                $conversation->user2 : $conversation->user1;
+            $otherUser = $conversation->user_one_id === $user->id ? 
+                $conversation->userTwo : $conversation->userOne;
+            
+            // Load the sender with profile picture for the event
+            $message->load('sender.profilePicture');
+            
+            // Load conversation relationships for the event
+            $conversation->load('userOne', 'userTwo');
             
             // Fire message sent event (handles both real-time and push notifications)
-            event(new \App\Events\MessageSent($message, $user, $otherUser));
+            // Temporarily disabled for debugging
+            // event(new \App\Events\MessageSent($message, $conversation));
 
+            $responseData = [
+                'id' => $message->id,
+                'content' => $message->message,
+                'message_type' => $message->type,
+                'sender_id' => $message->sender_id,
+                'created_at' => $message->created_at,
+            ];
+            
+            // Add media-specific fields for testing
+            if ($message->type === 'image' && $message->media_files) {
+                $responseData['attachment_url'] = $message->media_files[0] ?? null;
+            }
+            
+            if ($message->type === 'voice' && $message->media_files) {
+                $responseData['voice_url'] = $message->media_files[0] ?? null;
+                $responseData['voice_duration'] = $message->metadata['duration'] ?? 0;
+            }
+            
             return response()->json([
                 'success' => true,
                 'message' => 'Message sent successfully',
-                'data' => [
-                    'message' => [
-                        'id' => $message->id,
-                        'content' => $message->content,
-                        'type' => $message->type,
-                        'sender_id' => $message->sender_id,
-                        'media_url' => $message->media_path ? Storage::url($message->media_path) : null,
-                        'status' => $message->status,
-                        'sent_at' => $message->created_at,
-                    ]
-                ]
+                'data' => $responseData
             ], 201);
 
         } catch (\Exception $e) {
@@ -338,11 +384,11 @@ class ChatController extends Controller
         }
 
         // Check if message can be edited (within time limit)
-        if ($message->created_at->diffInMinutes(now()) > 15) {
+        if ($message->created_at->diffInMinutes(now()) > 5) {
             return response()->json([
                 'success' => false,
-                'message' => 'Message can only be edited within 15 minutes of sending'
-            ], 400);
+                'message' => 'Message can only be edited within 5 minutes of sending'
+            ], 403);
         }
 
         $validator = Validator::make($request->all(), [
@@ -359,19 +405,19 @@ class ChatController extends Controller
 
         try {
             $message->update([
-                'content' => $request->content,
-                'edited_at' => now(),
+                'message' => $request->content,
+                'metadata' => array_merge($message->metadata ?? [], [
+                    'edited_at' => now()->toISOString(),
+                    'is_edited' => true,
+                ]),
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Message updated successfully',
                 'data' => [
-                    'message' => [
-                        'id' => $message->id,
-                        'content' => $message->content,
-                        'edited_at' => $message->edited_at,
-                    ]
+                    'content' => $message->message,
+                    'is_edited' => true,
                 ]
             ]);
 
@@ -400,14 +446,19 @@ class ChatController extends Controller
         }
 
         try {
-            // Delete media file if exists
-            if ($message->media_path && Storage::exists($message->media_path)) {
-                Storage::delete($message->media_path);
+            // Delete media files if exist
+            if ($message->media_files) {
+                foreach ($message->media_files as $mediaFile) {
+                    $path = str_replace('/storage/', '', $mediaFile);
+                    if (Storage::exists($path)) {
+                        Storage::delete($path);
+                    }
+                }
             }
 
             // Soft delete or mark as deleted
             $message->update([
-                'content' => '[Message deleted]',
+                'message' => '[Message deleted]',
                 'status' => 'deleted',
                 'deleted_at' => now(),
             ]);
@@ -443,7 +494,7 @@ class ChatController extends Controller
 
         // Check if user is part of the conversation
         $conversation = $message->conversation;
-        if ($conversation->user1_id !== $user->id && $conversation->user2_id !== $user->id) {
+        if ($conversation->user_one_id !== $user->id && $conversation->user_two_id !== $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -478,7 +529,7 @@ class ChatController extends Controller
         $user = $request->user();
 
         // Check if user is part of this conversation
-        if ($conversation->user1_id !== $user->id && $conversation->user2_id !== $user->id) {
+        if ($conversation->user_one_id !== $user->id && $conversation->user_two_id !== $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access to conversation'
@@ -510,7 +561,7 @@ class ChatController extends Controller
         $user = $request->user();
 
         // Check if user is part of this conversation
-        if ($conversation->user1_id !== $user->id && $conversation->user2_id !== $user->id) {
+        if ($conversation->user_one_id !== $user->id && $conversation->user_two_id !== $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access to conversation'

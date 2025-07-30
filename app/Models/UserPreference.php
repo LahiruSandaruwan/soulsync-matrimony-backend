@@ -47,7 +47,7 @@ class UserPreference extends Model
         'auto_accept_matches', 'show_me_on_search', 'hide_profile_from_premium', 'preferred_distance_km',
         
         // Premium preferences
-        'show_only_verified_profiles', 'show_only_premium_profiles', 'priority_to_recent_profiles',
+        'show_only_verified_profiles', 'show_only_premium_profiles', 'priority_to_recent_profiles', 'deal_breakers',
         
         // Notification preferences
         'email_new_matches', 'email_profile_views', 'email_messages',
@@ -82,6 +82,7 @@ class UserPreference extends Model
             'preferred_family_status' => 'array',
             'preferred_zodiac_signs' => 'array',
             'preferred_stars' => 'array',
+            'deal_breakers' => 'array',
             'min_income_usd' => 'decimal:2',
             'max_income_usd' => 'decimal:2',
             'min_horoscope_score' => 'decimal:1',

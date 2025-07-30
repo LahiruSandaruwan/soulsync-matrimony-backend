@@ -66,9 +66,12 @@ class MatchController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'matches' => $formattedMatches,
+                'data' => $formattedMatches,
+                'meta' => [
+                    'current_page' => 1,
                     'total' => $formattedMatches->count(),
+                    'per_page' => $limit,
+                    'last_page' => 1,
                     'type' => $type,
                     'has_more' => $formattedMatches->count() >= $limit,
                 ]
@@ -96,11 +99,7 @@ class MatchController extends Controller
             });
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'matches' => $formattedMatches,
-                    'total' => $formattedMatches->count(),
-                    // Remove 'daily_matches', 'date', 'refresh_time' for test compatibility
-                ]
+                'data' => $formattedMatches
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -148,11 +147,7 @@ class MatchController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'suggestions' => $formattedMatches,
-                    'total' => $formattedMatches->count(),
-                    'min_score' => $minScore,
-                ]
+                'data' => $formattedMatches
             ]);
 
         } catch (\Exception $e) {
@@ -182,8 +177,8 @@ class MatchController extends Controller
         if ($user->id === $targetUser->id) {
             return response()->json([
                 'success' => false,
-                'message' => 'You cannot like yourself'
-            ], 400);
+                'message' => 'You cannot like your own profile'
+            ], 422);
         }
 
         if ($targetUser->status !== 'active' || $targetUser->profile_status !== 'approved') {
@@ -200,6 +195,14 @@ class MatchController extends Controller
 
         try {
             $result = $this->matchingService->processLike($user, $targetUser, false);
+
+            // If the service indicates failure, return 422 status
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message']
+                ], 422);
+            }
 
             return response()->json([
                 'success' => $result['success'],
@@ -238,7 +241,7 @@ class MatchController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'You cannot super like yourself'
-            ], 400);
+            ], 422);
         }
         if ($targetUser->status !== 'active' || $targetUser->profile_status !== 'approved') {
             return response()->json([
@@ -261,6 +264,15 @@ class MatchController extends Controller
         }
         try {
             $result = $this->matchingService->processLike($user, $targetUser, true);
+            
+            // If the service indicates failure, return 422 status
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message']
+                ], 422);
+            }
+            
             // Decrement super likes count
             $user->decrement('super_likes_count');
             return response()->json([
@@ -363,7 +375,7 @@ class MatchController extends Controller
                 'user_id' => $user->id,
                 'matched_user_id' => $targetUser->id,
             ], [
-                'match_type' => 'user_action',
+                'match_type' => 'search_result',
                 'status' => 'pending',
             ]);
 
@@ -460,6 +472,48 @@ class MatchController extends Controller
                 'message' => 'Failed to get mutual matches',
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Boost a match
+     */
+    public function boost(Request $request, UserMatch $match): JsonResponse
+    {
+        $user = $request->user();
+
+        // Check if user owns this match
+        if ($match->user_id !== $user->id && $match->matched_user_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access to match'
+            ], 403);
+        }
+
+        try {
+            // Update match with boost
+            $match->update([
+                'is_boosted' => true,
+                'boosted_at' => now(),
+                'boost_expires_at' => now()->addHours(24), // Boost lasts 24 hours
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Match boosted successfully',
+                'data' => [
+                    'match_id' => $match->id,
+                    'boosted_at' => $match->boosted_at,
+                    'boost_expires_at' => $match->boost_expires_at,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to boost match',
+                'error' => $e->getMessage()
             ], 500);
         }
     }

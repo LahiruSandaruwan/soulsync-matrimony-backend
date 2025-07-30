@@ -344,6 +344,7 @@ class SettingsController extends Controller
         $rules = [
             'general' => [
                 'app_name' => 'string|max:100',
+                'site_name' => 'string|max:100',
                 'app_tagline' => 'string|max:200',
                 'app_description' => 'string|max:500',
                 'default_timezone' => 'string|max:50',
@@ -355,9 +356,12 @@ class SettingsController extends Controller
                 'contact_email' => 'email',
                 'privacy_policy_url' => 'url',
                 'terms_of_service_url' => 'url',
+                'max_daily_matches' => 'integer|min:1|max:100',
+                'compatibility_threshold' => 'integer|min:0|max:100',
             ],
             'matching' => [
                 'max_daily_matches' => 'integer|min:1|max:100',
+                'compatibility_threshold' => 'integer|min:0|max:100',
                 'match_radius_km' => 'integer|min:1|max:1000',
                 'min_compatibility_score' => 'integer|min:0|max:100',
                 'age_preference_weight' => 'numeric|min:0|max:1',
@@ -630,5 +634,44 @@ class SettingsController extends Controller
             'total_gb' => round($total / 1024 / 1024 / 1024, 2),
             'used_percentage' => $usedPercentage,
         ];
+    }
+
+    /**
+     * Get revenue analytics
+     */
+    public function revenueAnalytics(Request $request): JsonResponse
+    {
+        try {
+            $period = $request->get('period', '30_days');
+            
+            // For now, return mock data
+            // In a real implementation, this would calculate actual revenue data
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total_revenue' => 0,
+                    'monthly_revenue' => [],
+                    'subscription_stats' => [
+                        'total_subscriptions' => 0,
+                        'active_subscriptions' => 0,
+                        'cancelled_subscriptions' => 0,
+                    ],
+                    'payment_methods' => [
+                        'stripe' => 0,
+                        'paypal' => 0,
+                        'payhere' => 0,
+                        'webxpay' => 0,
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Admin revenue analytics error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get revenue analytics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 } 

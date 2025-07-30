@@ -147,6 +147,14 @@ class UserMatch extends Model
 
         // Check if it's now a mutual match
         if ($this->checkMutualMatch()) {
+            \Log::info('Mutual match detected', [
+                'match_id' => $this->id,
+                'user_id' => $this->user_id,
+                'matched_user_id' => $this->matched_user_id,
+                'user_action' => $this->user_action,
+                'matched_user_action' => $this->matched_user_action
+            ]);
+            
             $this->status = 'mutual';
             $this->can_communicate = true;
             $this->communication_started_at = now();
@@ -203,7 +211,7 @@ class UserMatch extends Model
         $this->can_communicate = false;
         
         // Block conversation if exists
-        if ($this->conversation) {
+        if ($this->conversation_id && $this->conversation) {
             $this->conversation->update([
                 'status' => 'blocked',
                 'blocked_by' => $user->id,
@@ -251,16 +259,18 @@ class UserMatch extends Model
     private function createConversation(): void
     {
         if (!$this->conversation_id) {
-            $conversation = Conversation::create([
-                'user_one_id' => min($this->user_id, $this->matched_user_id),
-                'user_two_id' => max($this->user_id, $this->matched_user_id),
-                'match_id' => $this->id,
-                'type' => 'match',
-                'status' => 'active',
-                'started_at' => now()
-            ]);
-            
-            $this->conversation_id = $conversation->id;
+            try {
+                $conversation = Conversation::createMatchConversation($this);
+                $this->conversation_id = $conversation->id;
+                $this->save();
+            } catch (\Exception $e) {
+                // Log the error for debugging
+                \Log::error('Failed to create conversation for match: ' . $e->getMessage(), [
+                    'match_id' => $this->id,
+                    'user_id' => $this->user_id,
+                    'matched_user_id' => $this->matched_user_id
+                ]);
+            }
         }
     }
 

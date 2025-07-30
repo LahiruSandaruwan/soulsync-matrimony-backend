@@ -86,6 +86,14 @@ class User extends Authenticatable implements MustVerifyEmail, \Illuminate\Contr
         'preferred_max_age',
         'preferred_distance_km',
         'trial_used',
+        'is_admin',
+        'is_moderator',
+        'status_changed_at',
+        'status_changed_by',
+        'admin_notes',
+        'profile_status_changed_at',
+        'profile_status_changed_by',
+        'profile_admin_notes',
     ];
 
     /**
@@ -268,10 +276,18 @@ class User extends Authenticatable implements MustVerifyEmail, \Illuminate\Contr
     /**
      * Get all matches for the user (as sender or receiver).
      */
-    public function matches()
+    public function matches(): HasMany
     {
         return $this->hasMany(UserMatch::class, 'user_id')
             ->orWhere('matched_user_id', $this->id);
+    }
+
+    /**
+     * Get the user's target matches (matches where they are the target).
+     */
+    public function targetMatches(): HasMany
+    {
+        return $this->hasMany(UserMatch::class, 'matched_user_id');
     }
 
     /**
@@ -353,6 +369,23 @@ class User extends Authenticatable implements MustVerifyEmail, \Illuminate\Contr
     public function reportsReceived(): HasMany
     {
         return $this->hasMany(Report::class, 'reported_user_id');
+    }
+
+    /**
+     * Get all reports related to this user (as reporter or reported).
+     */
+    public function reports(): HasMany
+    {
+        return $this->hasMany(Report::class, 'reporter_id')
+            ->orWhere('reported_user_id', $this->id);
+    }
+
+    /**
+     * Get reports where this user is the reporter.
+     */
+    public function reportedBy(): HasMany
+    {
+        return $this->hasMany(Report::class, 'reporter_id');
     }
 
     // Accessors and Mutators

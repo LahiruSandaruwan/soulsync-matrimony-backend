@@ -16,51 +16,52 @@ class Message extends Model
     protected $fillable = [
         'conversation_id',
         'sender_id',
-        'content',
-        'message_type',
-        'is_edited',
-        'edited_at',
-        'is_deleted',
+        'receiver_id',
+        'message',
+        'type',
+        'media_files',
+        'metadata',
+        'status',
+        'delivered_at',
+        'read_at',
         'deleted_at',
         'deleted_by',
-        'read_at',
-        'delivered_at',
-        'metadata',
-        'reply_to_message_id',
-        'forwarded_from_message_id',
-        'attachment_type',
-        'attachment_url',
-        'attachment_metadata',
-        'voice_duration',
-        'voice_url',
-        'is_voice_message',
-        'is_system_message',
-        'system_message_type',
-        'encryption_key',
-        'is_encrypted'
+        'reply_to_id',
+        'quoted_message',
+        'is_premium_message',
+        'is_priority',
+        'premium_features',
+        'is_flagged',
+        'flag_reason',
+        'flagged_by',
+        'flagged_at',
+        'is_approved',
+        'approved_by',
+        'character_count',
+        'sentiment_analysis',
+        'contains_contact_info',
+        'system_data'
     ];
 
     protected $casts = [
+        'media_files' => 'array',
         'metadata' => 'array',
-        'attachment_metadata' => 'array',
-        'is_edited' => 'boolean',
-        'is_deleted' => 'boolean',
-        'is_voice_message' => 'boolean',
-        'is_system_message' => 'boolean',
-        'is_encrypted' => 'boolean',
-        'edited_at' => 'datetime',
+        'premium_features' => 'array',
+        'sentiment_analysis' => 'array',
+        'system_data' => 'array',
+        'is_premium_message' => 'boolean',
+        'is_priority' => 'boolean',
+        'is_flagged' => 'boolean',
+        'is_approved' => 'boolean',
+        'contains_contact_info' => 'boolean',
         'deleted_at' => 'datetime',
         'read_at' => 'datetime',
         'delivered_at' => 'datetime',
-        'voice_duration' => 'integer',
+        'flagged_at' => 'datetime',
+        'character_count' => 'integer',
     ];
 
-    protected $dates = [
-        'edited_at',
-        'deleted_at',
-        'read_at',
-        'delivered_at',
-    ];
+
 
     // Message Types
     const TYPE_TEXT = 'text';
@@ -452,6 +453,14 @@ class Message extends Model
         return sprintf('%d:%02d', $minutes, $remainingSeconds);
     }
 
+    /**
+     * Get the message type attribute (alias for type)
+     */
+    public function getMessageTypeAttribute(): string
+    {
+        return $this->type;
+    }
+
     // Static methods for creating messages
     public static function createTextMessage(
         Conversation $conversation,
@@ -459,17 +468,26 @@ class Message extends Model
         string $content,
         ?int $replyToMessageId = null
     ): self {
-        return self::create([
+        $otherUser = $conversation->user_one_id === $sender->id ? $conversation->userTwo : $conversation->userOne;
+        
+        $message = self::create([
             'conversation_id' => $conversation->id,
             'sender_id' => $sender->id,
-            'content' => $content,
-            'message_type' => self::TYPE_TEXT,
-            'reply_to_message_id' => $replyToMessageId,
+            'receiver_id' => $otherUser->id,
+            'message' => $content,
+            'type' => self::TYPE_TEXT,
+            'reply_to_id' => $replyToMessageId,
             'metadata' => [
                 'word_count' => str_word_count($content),
                 'character_count' => strlen($content),
-            ]
+            ],
+            'character_count' => strlen($content),
         ]);
+        
+        // Increment unread count for the receiver
+        $conversation->incrementUnreadCount($otherUser);
+        
+        return $message;
     }
 
     public static function createImageMessage(
@@ -478,17 +496,24 @@ class Message extends Model
         string $imageUrl,
         array $metadata = []
     ): self {
-        return self::create([
+        $otherUser = $conversation->user_one_id === $sender->id ? $conversation->userTwo : $conversation->userOne;
+        
+        $message = self::create([
             'conversation_id' => $conversation->id,
             'sender_id' => $sender->id,
-            'content' => '📸 Image',
-            'message_type' => self::TYPE_IMAGE,
-            'attachment_type' => self::ATTACHMENT_IMAGE,
-            'attachment_url' => $imageUrl,
-            'attachment_metadata' => array_merge($metadata, [
+            'receiver_id' => $otherUser->id,
+            'message' => '📸 Image',
+            'type' => self::TYPE_IMAGE,
+            'media_files' => [$imageUrl],
+            'metadata' => array_merge($metadata, [
                 'uploaded_at' => now()->toISOString(),
             ])
         ]);
+        
+        // Increment unread count for the receiver
+        $conversation->incrementUnreadCount($otherUser);
+        
+        return $message;
     }
 
     public static function createVoiceMessage(
@@ -497,22 +522,26 @@ class Message extends Model
         string $voiceUrl,
         int $duration
     ): self {
-        return self::create([
+        $otherUser = $conversation->user_one_id === $sender->id ? $conversation->userTwo : $conversation->userOne;
+        
+        $message = self::create([
             'conversation_id' => $conversation->id,
             'sender_id' => $sender->id,
-            'content' => '🎤 Voice message',
-            'message_type' => self::TYPE_VOICE,
-            'is_voice_message' => true,
-            'voice_url' => $voiceUrl,
-            'voice_duration' => $duration,
-            'attachment_type' => self::ATTACHMENT_AUDIO,
-            'attachment_url' => $voiceUrl,
-            'attachment_metadata' => [
+            'receiver_id' => $otherUser->id,
+            'message' => '🎤 Voice message',
+            'type' => self::TYPE_VOICE,
+            'media_files' => [$voiceUrl],
+            'metadata' => [
                 'duration' => $duration,
                 'duration_formatted' => (new self())->formatDuration($duration),
                 'uploaded_at' => now()->toISOString(),
             ]
         ]);
+        
+        // Increment unread count for the receiver
+        $conversation->incrementUnreadCount($otherUser);
+        
+        return $message;
     }
 
     public static function createSystemMessage(
@@ -520,13 +549,19 @@ class Message extends Model
         string $systemMessageType,
         array $metadata = []
     ): self {
+        // Get the first user in the conversation as the receiver
+        $receiverId = $conversation->user_one_id;
+        
         return self::create([
             'conversation_id' => $conversation->id,
-            'sender_id' => null, // System messages have no sender
-            'content' => (new self())->getSystemMessageContent(),
-            'message_type' => self::TYPE_SYSTEM,
-            'is_system_message' => true,
-            'system_message_type' => $systemMessageType,
+            'sender_id' => $receiverId, // Use the receiver as sender for system messages
+            'receiver_id' => $receiverId, // System messages are sent to the same user
+            'message' => (new self())->getSystemMessageContent(),
+            'type' => self::TYPE_SYSTEM,
+            'system_data' => [
+                'type' => $systemMessageType,
+                'metadata' => $metadata,
+            ],
             'metadata' => $metadata,
             'read_at' => now(), // System messages are auto-read
             'delivered_at' => now(), // System messages are auto-delivered

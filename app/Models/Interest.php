@@ -26,7 +26,13 @@ class Interest extends Model
         'created_by',
         'updated_by',
         'deleted_at',
-        'deleted_by'
+        'deleted_by',
+        'slug',
+        'matching_weight',
+        'user_count',
+        'popularity_score',
+        'is_trending',
+        'localization'
     ];
 
     protected $casts = [

@@ -14,7 +14,7 @@ class UserWarning extends Model
 
     protected $fillable = [
         'user_id',
-        'warning_template_id',
+        'template_id',
         'report_id',
         'issued_by',
         'warning_type',
@@ -367,7 +367,7 @@ class UserWarning extends Model
     ): self {
         return self::create([
             'user_id' => $user->id,
-            'warning_template_id' => $templateId,
+            'template_id' => $templateId,
             'report_id' => $reportId,
             'issued_by' => $issuedBy?->id,
             'warning_type' => $type,

@@ -13,6 +13,7 @@ class Notification extends Model
 
     protected $fillable = [
         'user_id',
+        'actor_id',
         'type',
         'title',
         'message',
@@ -38,7 +39,6 @@ class Notification extends Model
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
         'expires_at' => 'datetime',
-        'priority' => 'integer',
     ];
 
     protected $dates = [
@@ -184,7 +184,7 @@ class Notification extends Model
                 'matched_user_name' => $matchedUser->first_name,
                 'matched_user_photo' => $matchedUser->profilePicture?->file_path
             ],
-            'priority' => 8,
+            'priority' => 'high',
             'category' => 'matching',
             'action_url' => "/matches/{$matchedUser->id}",
             'action_text' => 'View Profile',
@@ -207,8 +207,8 @@ class Notification extends Model
                 'conversation_id' => $message->conversation_id,
                 'preview' => substr($message->content, 0, 100)
             ],
-            'priority' => 7,
-            'category' => 'messaging',
+            'priority' => 'medium',
+            'category' => 'message',
             'action_url' => "/chat/{$message->conversation_id}",
             'action_text' => 'Reply',
             'source_type' => Message::class,
@@ -228,7 +228,7 @@ class Notification extends Model
                 'viewer_name' => $viewer->first_name,
                 'viewer_photo' => $viewer->profilePicture?->file_path
             ],
-            'priority' => 5,
+            'priority' => 'low',
             'category' => 'profile',
             'action_url' => "/users/{$viewer->id}",
             'action_text' => 'View Profile',
@@ -243,34 +243,34 @@ class Notification extends Model
             'trial_started' => [
                 'title' => 'Free Trial Started',
                 'message' => 'Your free trial has started! Enjoy premium features.',
-                'priority' => 6
+                'priority' => 'medium'
             ],
             'trial_ending' => [
                 'title' => 'Trial Ending Soon',
                 'message' => 'Your free trial ends in 3 days. Upgrade to continue.',
-                'priority' => 8
+                'priority' => 'high'
             ],
             'subscription_active' => [
                 'title' => 'Subscription Active',
                 'message' => 'Your subscription is now active!',
-                'priority' => 6
+                'priority' => 'medium'
             ],
             'subscription_expired' => [
                 'title' => 'Subscription Expired',
                 'message' => 'Your subscription has expired. Renew to continue.',
-                'priority' => 8
+                'priority' => 'high'
             ],
             'payment_failed' => [
                 'title' => 'Payment Failed',
                 'message' => 'Your payment failed. Please update your payment method.',
-                'priority' => 9
+                'priority' => 'urgent'
             ]
         ];
 
         $notification = $notifications[$type] ?? [
             'title' => 'Subscription Update',
             'message' => 'Your subscription has been updated.',
-            'priority' => 6
+            'priority' => 'medium'
         ];
 
         return self::create([

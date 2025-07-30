@@ -1,31 +1,8 @@
 {
   "info": {
     "name": "SoulSync Matrimony API",
-    "description": "Complete API collection for SoulSync Matrimonial Platform",
-    "version": "1.0.0",
+    "description": "Comprehensive Postman collection for all backend endpoints, including chat, notifications, payments, voice, social login, horoscope, matching, subscriptions, email verification, and webhooks.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:8000/api/v1",
-      "type": "string"
-    },
-    {
-      "key": "token",
-      "value": "",
-      "type": "string"
-    }
-  ],
-  "auth": {
-    "type": "bearer",
-    "bearer": [
-      {
-        "key": "token",
-        "value": "{{token}}",
-        "type": "string"
-      }
-    ]
   },
   "item": [
     {
@@ -36,20 +13,13 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"phone\": \"+1234567890\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\",\n  \"date_of_birth\": \"1990-01-15\",\n  \"gender\": \"male\",\n  \"country_code\": \"US\",\n  \"terms_accepted\": true,\n  \"privacy_accepted\": true\n}"
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"string\",\n  \"first_name\": \"string\",\n  \"last_name\": \"string\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/auth/register",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "register"]
-            }
+            "url": { "raw": "/api/auth/register", "path": ["api", "auth", "register"] }
           },
           "response": []
         },
@@ -58,33 +28,13 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"password123\",\n  \"remember_me\": true\n}"
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"string\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "login"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Get User Profile",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/auth/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "me"]
-            }
+            "url": { "raw": "/api/auth/login", "path": ["api", "auth", "login"] }
           },
           "response": []
         },
@@ -92,30 +42,61 @@
           "name": "Logout",
           "request": {
             "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/auth/logout",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "logout"]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/auth/logout", "path": ["api", "auth", "logout"] }
           },
           "response": []
         }
       ]
     },
     {
-      "name": "Profile Management",
+      "name": "Email Verification",
+      "item": [
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "/api/email/verify/:id/:hash", "path": ["api", "email", "verify", ":id", ":hash"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Verification Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/email/resend", "path": ["api", "email", "resend"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Check Verification Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/email/check", "path": ["api", "email", "check"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Profile",
       "item": [
         {
           "name": "Get Profile",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["profile"]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/user/profile", "path": ["api", "user", "profile"] }
           },
           "response": []
         },
@@ -124,20 +105,14 @@
           "request": {
             "method": "PUT",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"profile\": {\n    \"height_cm\": 175,\n    \"current_city\": \"Colombo\",\n    \"current_country\": \"Sri Lanka\",\n    \"religion\": \"Buddhist\",\n    \"caste\": \"Govi\",\n    \"education_level\": \"Bachelor's\",\n    \"occupation\": \"Software Engineer\",\n    \"annual_income_usd\": 35000,\n    \"about_me\": \"Looking for a life partner who shares similar values\",\n    \"family_details\": \"Close-knit family with traditional values\"\n  }\n}"
+              "raw": "{ ... }"
             },
-            "url": {
-              "raw": "{{baseUrl}}/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["profile"]
-            }
+            "url": { "raw": "/api/user/profile", "path": ["api", "user", "profile"] }
           },
           "response": []
         },
@@ -145,40 +120,29 @@
           "name": "Upload Photo",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "multipart/form-data" }
+            ],
             "body": {
               "mode": "formdata",
               "formdata": [
-                {
-                  "key": "photo",
-                  "type": "file",
-                  "src": []
-                },
-                {
-                  "key": "is_profile_picture",
-                  "value": "true",
-                  "type": "text"
-                }
+                { "key": "file", "type": "file" },
+                { "key": "is_primary", "type": "text", "value": "true" }
               ]
             },
-            "url": {
-              "raw": "{{baseUrl}}/profile/photos",
-              "host": ["{{baseUrl}}"],
-              "path": ["profile", "photos"]
-            }
+            "url": { "raw": "/api/user/photos", "path": ["api", "user", "photos"] }
           },
           "response": []
         },
         {
-          "name": "Get Profile Completion Status",
+          "name": "Delete Photo",
           "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/profile/completion-status",
-              "host": ["{{baseUrl}}"],
-              "path": ["profile", "completion-status"]
-            }
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/user/photos/:id", "path": ["api", "user", "photos", ":id"] }
           },
           "response": []
         }
@@ -188,15 +152,13 @@
       "name": "Matching & Discovery",
       "item": [
         {
-          "name": "Get Daily Matches",
+          "name": "Get Matches",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/matches/daily",
-              "host": ["{{baseUrl}}"],
-              "path": ["matches", "daily"]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/matches", "path": ["api", "matches"] }
           },
           "response": []
         },
@@ -204,150 +166,75 @@
           "name": "Like User",
           "request": {
             "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/matches/:userId/like",
-              "host": ["{{baseUrl}}"],
-              "path": ["matches", ":userId", "like"],
-              "variable": [
-                {
-                  "key": "userId",
-                  "value": "2"
-                }
-              ]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/matches/:id/like", "path": ["api", "matches", ":id", "like"] }
           },
           "response": []
         },
         {
-          "name": "Super Like User",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/matches/:userId/super-like",
-              "host": ["{{baseUrl}}"],
-              "path": ["matches", ":userId", "super-like"],
-              "variable": [
-                {
-                  "key": "userId",
-                  "value": "2"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Get Mutual Matches",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/matches/mutual",
-              "host": ["{{baseUrl}}"],
-              "path": ["matches", "mutual"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Who Liked Me (Premium)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/matches/liked-me",
-              "host": ["{{baseUrl}}"],
-              "path": ["matches", "liked-me"]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Search & Browse",
-      "item": [
-        {
-          "name": "Advanced Search",
+          "name": "Dislike User",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"age_range\": {\n    \"min\": 25,\n    \"max\": 35\n  },\n  \"location\": {\n    \"countries\": [\"Sri Lanka\", \"India\"],\n    \"max_distance_km\": 50\n  },\n  \"education\": [\"Bachelor's\", \"Master's\"],\n  \"religion\": [\"Buddhist\", \"Hindu\"],\n  \"height_range\": {\n    \"min_cm\": 160,\n    \"max_cm\": 180\n  },\n  \"income_range\": {\n    \"min_usd\": 20000,\n    \"max_usd\": 100000\n  },\n  \"marital_status\": [\"never_married\"],\n  \"have_children\": false\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/search/advanced",
-              "host": ["{{baseUrl}}"],
-              "path": ["search", "advanced"]
-            }
+            "url": { "raw": "/api/matches/:id/dislike", "path": ["api", "matches", ":id", "dislike"] }
           },
           "response": []
         },
         {
-          "name": "Browse Profiles",
+          "name": "Browse Users",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/browse?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["browse"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "20"
-                }
-              ]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/browse", "path": ["api", "browse"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ ... }"
+            },
+            "url": { "raw": "/api/browse/search", "path": ["api", "browse", "search"] }
           },
           "response": []
         }
       ]
     },
     {
-      "name": "Messaging",
+      "name": "Chat & Messaging",
       "item": [
         {
           "name": "Get Conversations",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/chat/conversations",
-              "host": ["{{baseUrl}}"],
-              "path": ["chat", "conversations"]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/conversations", "path": ["api", "conversations"] }
           },
           "response": []
         },
         {
-          "name": "Get Conversation Messages",
+          "name": "Get Messages",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/chat/conversations/:conversationId",
-              "host": ["{{baseUrl}}"],
-              "path": ["chat", "conversations", ":conversationId"],
-              "variable": [
-                {
-                  "key": "conversationId",
-                  "value": "1"
-                }
-              ]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/conversations/:id/messages", "path": ["api", "conversations", ":id", "messages"] }
           },
           "response": []
         },
@@ -356,79 +243,252 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"Hello! Nice to meet you.\",\n  \"type\": \"text\"\n}"
+              "raw": "{\n  \"content\": \"string\",\n  \"type\": \"text|image|voice\",\n  \"attachment\": \"file (optional)\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/chat/conversations/:conversationId/messages",
-              "host": ["{{baseUrl}}"],
-              "path": ["chat", "conversations", ":conversationId", "messages"],
-              "variable": [
-                {
-                  "key": "conversationId",
-                  "value": "1"
-                }
-              ]
-            }
+            "url": { "raw": "/api/conversations/:id/messages", "path": ["api", "conversations", ":id", "messages"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Message as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/messages/:id/read", "path": ["api", "messages", ":id", "read"] }
           },
           "response": []
         }
       ]
     },
     {
-      "name": "Subscriptions",
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/notifications", "path": ["api", "notifications"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/notifications/:id/read", "path": ["api", "notifications", ":id", "read"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Notification",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/notifications/:id", "path": ["api", "notifications", ":id"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payments & Subscriptions",
       "item": [
         {
           "name": "Get Subscription Plans",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/subscription/plans",
-              "host": ["{{baseUrl}}"],
-              "path": ["subscription", "plans"]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/subscriptions/plans", "path": ["api", "subscriptions", "plans"] }
           },
           "response": []
         },
         {
-          "name": "Subscribe to Plan",
+          "name": "Create Subscription",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"plan_type\": \"premium\",\n  \"duration_months\": 1,\n  \"payment_method\": \"stripe\",\n  \"payment_token\": \"tok_visa\",\n  \"currency\": \"USD\"\n}"
+              "raw": "{\n  \"plan_id\": \"string\",\n  \"payment_method\": \"stripe|paypal|payhere|webxpay\"\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/subscription/subscribe",
-              "host": ["{{baseUrl}}"],
-              "path": ["subscription", "subscribe"]
-            }
+            "url": { "raw": "/api/subscriptions/create", "path": ["api", "subscriptions", "create"] }
           },
           "response": []
         },
         {
-          "name": "Get Current Subscription",
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscription_id\": \"string\"\n}"
+            },
+            "url": { "raw": "/api/subscriptions/cancel", "path": ["api", "subscriptions", "cancel"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Subscription Status",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/subscription",
-              "host": ["{{baseUrl}}"],
-              "path": ["subscription"]
-            }
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/subscriptions/status", "path": ["api", "subscriptions", "status"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Stripe Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ ...Stripe webhook payload... }"
+            },
+            "url": { "raw": "/api/webhooks/stripe", "path": ["api", "webhooks", "stripe"] }
+          },
+          "response": []
+        },
+        {
+          "name": "PayPal Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ ...PayPal webhook payload... }"
+            },
+            "url": { "raw": "/api/webhooks/paypal", "path": ["api", "webhooks", "paypal"] }
+          },
+          "response": []
+        },
+        {
+          "name": "PayHere Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ ...PayHere webhook payload... }"
+            },
+            "url": { "raw": "/api/webhooks/payhere", "path": ["api", "webhooks", "payhere"] }
+          },
+          "response": []
+        },
+        {
+          "name": "WebXPay Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ ...WebXPay webhook payload... }"
+            },
+            "url": { "raw": "/api/webhooks/webxpay", "path": ["api", "webhooks", "webxpay"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Voice Messaging",
+      "item": [
+        {
+          "name": "Send Voice Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "multipart/form-data" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "type", "type": "text", "value": "voice" },
+                { "key": "attachment", "type": "file" }
+              ]
+            },
+            "url": { "raw": "/api/conversations/:id/messages", "path": ["api", "conversations", ":id", "messages"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Download Voice Message",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/messages/:id/download", "path": ["api", "messages", ":id", "download"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Social Login",
+      "item": [
+        {
+          "name": "Google Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"google_id_token\"\n}"
+            },
+            "url": { "raw": "/api/auth/social/google", "path": ["api", "auth", "social", "google"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Facebook Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"facebook_access_token\"\n}"
+            },
+            "url": { "raw": "/api/auth/social/facebook", "path": ["api", "auth", "social", "facebook"] }
           },
           "response": []
         }
@@ -441,157 +501,37 @@
           "name": "Get Horoscope",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/horoscope",
-              "host": ["{{baseUrl}}"],
-              "path": ["horoscope"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Add Horoscope Data",
-          "request": {
-            "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"birth_date\": \"1990-01-15\",\n  \"birth_time\": \"14:30\",\n  \"birth_place\": \"Colombo, Sri Lanka\",\n  \"birth_coordinates\": {\n    \"latitude\": 6.9271,\n    \"longitude\": 79.8612\n  },\n  \"zodiac_sign\": \"Capricorn\",\n  \"moon_sign\": \"Taurus\",\n  \"nakshatra\": \"Rohini\",\n  \"manglik_status\": \"no\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/horoscope",
-              "host": ["{{baseUrl}}"],
-              "path": ["horoscope"]
-            }
+            "url": { "raw": "/api/horoscope/:sign", "path": ["api", "horoscope", ":sign"] }
           },
           "response": []
         },
         {
-          "name": "Check Compatibility",
+          "name": "Get Horoscope Compatibility",
           "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/horoscope/compatibility/:userId",
-              "host": ["{{baseUrl}}"],
-              "path": ["horoscope", "compatibility", ":userId"],
-              "variable": [
-                {
-                  "key": "userId",
-                  "value": "2"
-                }
-              ]
-            }
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "/api/horoscope/compatibility", "path": ["api", "horoscope", "compatibility"], "query": [
+              { "key": "sign1", "value": "aries" },
+              { "key": "sign2", "value": "leo" }
+            ] }
           },
           "response": []
         }
       ]
     },
     {
-      "name": "Admin",
-      "item": [
-        {
-          "name": "Dashboard Stats",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/admin/dashboard",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "dashboard"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Get Users",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/admin/users?page=1&limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "20"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Approve Photo",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/admin/photos/:photoId/approve",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "photos", ":photoId", "approve"],
-              "variable": [
-                {
-                  "key": "photoId",
-                  "value": "1"
-                }
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Public",
+      "name": "System",
       "item": [
         {
           "name": "Health Check",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Get Countries",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/public/countries",
-              "host": ["{{baseUrl}}"],
-              "path": ["public", "countries"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Get Interests",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/public/interests",
-              "host": ["{{baseUrl}}"],
-              "path": ["public", "interests"]
-            }
+            "url": { "raw": "/api/webhooks/health", "path": ["api", "webhooks", "health"] }
           },
           "response": []
         }

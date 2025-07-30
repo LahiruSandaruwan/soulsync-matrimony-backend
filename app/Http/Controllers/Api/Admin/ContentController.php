@@ -159,7 +159,7 @@ class ContentController extends Controller
                 'success' => true,
                 'message' => 'Interest created successfully',
                 'data' => $interest
-            ]);
+            ], 201);
 
         } catch (\Exception $e) {
             Log::error('Admin create interest error: ' . $e->getMessage());
