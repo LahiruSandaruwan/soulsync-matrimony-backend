@@ -30,25 +30,11 @@
 - **POST** `/api/v1/auth/register`
 - **Body:** `{ "email": "user@example.com", "password": "string", "password_confirmation": "string", "first_name": "string", "last_name": "string", "date_of_birth": "YYYY-MM-DD", "gender": "male|female|other", "country_code": "LK", "terms_accepted": true, "privacy_accepted": true }`
 - **Response:** `201 Created`
-```
-{
-  "success": true,
-  "user": { ... },
-  "token": "..."
-}
-```
 
 ### Login
 - **POST** `/api/v1/auth/login`
 - **Body:** `{ "email": "user@example.com", "password": "string" }`
 - **Response:** `200 OK`
-```
-{
-  "success": true,
-  "user": { ... },
-  "token": "..."
-}
-```
 
 ### Social Login
 - **POST** `/api/v1/auth/social-login`
@@ -99,13 +85,6 @@
 ### Verify Email
 - **GET** `/api/email/verify/{id}/{hash}`
 - **Response:** `200 OK` or `400/404/500`
-```
-{
-  "success": true,
-  "message": "Email verified successfully",
-  "user": { ... }
-}
-```
 
 ### Check Verification Status
 - **GET** `/api/email/verify/{id}/status`
@@ -1016,4 +995,4 @@ Real-time events are available via WebSocket connection:
 - `user.offline` - User goes offline
 - `message.received` - New message received
 - `match.created` - New match created
-- `notification.received` - New notification received
+- `notification.received` - New notification received 
