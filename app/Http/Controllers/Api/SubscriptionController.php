@@ -74,66 +74,67 @@ class SubscriptionController extends Controller
         $plans = Cache::remember($cacheKey, 3600, function () use ($isLocalUser) {
             return [
                 'free' => [
-                'name' => 'Free',
-                'price_usd' => 0,
-                'price_local' => $isLocalUser ? 0 : 0,
-                'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                'duration_days' => null,
-                'features' => $this->getFreeFeatures(),
-                'limits' => [
-                    'daily_likes' => 5,
-                    'daily_matches' => 5,
-                    'super_likes' => 0,
-                    'profile_views' => false,
-                    'advanced_search' => false,
-                ]
-            ],
-            'basic' => [
-                'name' => 'Basic',
-                'price_usd' => 4.99,
-                'price_local' => $isLocalUser ? 1500 : 4.99, // ~1500 LKR
-                'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                'duration_days' => 30,
-                'popular' => false,
-                'features' => $this->getBasicFeatures(),
-                'limits' => [
-                    'daily_likes' => 25,
-                    'daily_matches' => 25,
-                    'super_likes' => 3,
-                    'profile_views' => true,
-                    'advanced_search' => true,
-                ]
-            ],
-            'premium' => [
-                'name' => 'Premium',
-                'price_usd' => 9.99,
-                'price_local' => $isLocalUser ? 3000 : 9.99, // ~3000 LKR
-                'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                'duration_days' => 30,
-                'popular' => true,
-                'features' => $this->getPremiumFeatures('premium'),
-                'limits' => [
-                    'daily_likes' => 100,
-                    'daily_matches' => 100,
-                    'super_likes' => 10,
-                    'profile_views' => true,
-                    'advanced_search' => true,
-                ]
-            ],
-            'platinum' => [
-                'name' => 'Platinum',
-                'price_usd' => 19.99,
-                'price_local' => $isLocalUser ? 6000 : 19.99, // ~6000 LKR
-                'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                'duration_days' => 30,
-                'popular' => false,
-                'features' => $this->getPlatinumFeatures(),
-                'limits' => [
-                    'daily_likes' => 'unlimited',
-                    'daily_matches' => 'unlimited',
-                    'super_likes' => 25,
-                    'profile_views' => true,
-                    'advanced_search' => true,
+                    'name' => 'Free',
+                    'price_usd' => 0,
+                    'price_local' => $isLocalUser ? 0 : 0,
+                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
+                    'duration_days' => null,
+                    'features' => $this->getFreeFeatures(),
+                    'limits' => [
+                        'daily_likes' => 5,
+                        'daily_matches' => 5,
+                        'super_likes' => 0,
+                        'profile_views' => false,
+                        'advanced_search' => false,
+                    ]
+                ],
+                'basic' => [
+                    'name' => 'Basic',
+                    'price_usd' => 4.99,
+                    'price_local' => $isLocalUser ? 1500 : 4.99, // ~1500 LKR
+                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
+                    'duration_days' => 30,
+                    'popular' => false,
+                    'features' => $this->getBasicFeatures(),
+                    'limits' => [
+                        'daily_likes' => 25,
+                        'daily_matches' => 25,
+                        'super_likes' => 3,
+                        'profile_views' => true,
+                        'advanced_search' => true,
+                    ]
+                ],
+                'premium' => [
+                    'name' => 'Premium',
+                    'price_usd' => 9.99,
+                    'price_local' => $isLocalUser ? 3000 : 9.99, // ~3000 LKR
+                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
+                    'duration_days' => 30,
+                    'popular' => true,
+                    'features' => $this->getPremiumFeatures('premium'),
+                    'limits' => [
+                        'daily_likes' => 100,
+                        'daily_matches' => 100,
+                        'super_likes' => 10,
+                        'profile_views' => true,
+                        'advanced_search' => true,
+                    ]
+                ],
+                'platinum' => [
+                    'name' => 'Platinum',
+                    'price_usd' => 19.99,
+                    'price_local' => $isLocalUser ? 6000 : 19.99, // ~6000 LKR
+                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
+                    'duration_days' => 30,
+                    'popular' => false,
+                    'features' => $this->getPlatinumFeatures(),
+                    'limits' => [
+                        'daily_likes' => 'unlimited',
+                        'daily_matches' => 'unlimited',
+                        'super_likes' => 25,
+                        'profile_views' => true,
+                        'advanced_search' => true,
+                    ]
                 ]
             ];
         });
