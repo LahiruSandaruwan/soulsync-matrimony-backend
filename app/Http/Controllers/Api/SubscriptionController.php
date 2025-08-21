@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
 class SubscriptionController extends Controller
@@ -66,9 +67,13 @@ class SubscriptionController extends Controller
     {
         $userCountry = $request->user() ? $request->user()->country_code : 'US';
         $isLocalUser = in_array($userCountry, ['LK']); // Sri Lankan users
-
-        $plans = [
-            'free' => [
+        
+        // Cache plans for 1 hour based on user country
+        $cacheKey = "subscription_plans_{$userCountry}";
+        
+        $plans = Cache::remember($cacheKey, 3600, function () use ($isLocalUser) {
+            return [
+                'free' => [
                 'name' => 'Free',
                 'price_usd' => 0,
                 'price_local' => $isLocalUser ? 0 : 0,
@@ -130,8 +135,8 @@ class SubscriptionController extends Controller
                     'profile_views' => true,
                     'advanced_search' => true,
                 ]
-            ]
-        ];
+            ];
+        });
 
         return response()->json([
             'success' => true,

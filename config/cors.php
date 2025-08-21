@@ -19,7 +19,15 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => [
+        env('FRONTEND_URL', 'http://localhost:4200'),
+        env('FRONTEND_PROD_URL', 'https://app.soulsync.com'),
+        'https://soulsync.com',
+        'https://www.soulsync.com',
+        'http://localhost:4200',
+        'http://localhost:3000',
+        'http://127.0.0.1:4200',
+    ],
 
     'allowed_origins_patterns' => [],
 

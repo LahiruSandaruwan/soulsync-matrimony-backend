@@ -615,11 +615,150 @@ class MatchingService
         }
         return 30;
     }
-    public function calculateDistance($lat1, $lon1, $lat2, $lon2) { return 100.0; /* TODO: Implement real logic */ }
-    public function applyPremiumBoost($score, $user) { return min(100, $score + 10); /* TODO: Implement real logic */ }
-    public function applyVerificationBoost($score, $user) { return $user->verification_status === 'verified' ? $score + 5 : $score; /* TODO: Implement real logic */ }
-    public function checkDealBreakers($user, $targetUser) { return true; /* TODO: Implement real logic */ }
-    public function calculateCompatibilityScore($user1, $user2) { return 80.0; /* TODO: Implement real logic */ }
+    /**
+     * Calculate distance between two coordinates using Haversine formula
+     */
+    public function calculateDistance($lat1, $lon1, $lat2, $lon2) 
+    {
+        $earthRadius = 6371; // km
+
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+
+        $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) * sin($dLon/2);
+        $c = 2 * atan2(sqrt($a), sqrt(1-$a));
+
+        return $earthRadius * $c;
+    }
+    /**
+     * Apply premium boost to matching score
+     */
+    public function applyPremiumBoost($score, $user) 
+    {
+        if (!$user->is_premium || !$user->premium_expires_at || $user->premium_expires_at->isPast()) {
+            return $score;
+        }
+
+        // Premium users get better visibility and scoring
+        $boostAmount = 15; // 15% boost for premium users
+        return min(100, $score + $boostAmount);
+    }
+    /**
+     * Apply verification boost to matching score
+     */
+    public function applyVerificationBoost($score, $user) 
+    {
+        $boost = 0;
+        
+        // Email verified boost
+        if ($user->email_verified) {
+            $boost += 2;
+        }
+        
+        // Phone verified boost
+        if ($user->phone_verified) {
+            $boost += 3;
+        }
+        
+        // Photo verified boost
+        if ($user->photo_verified) {
+            $boost += 5;
+        }
+        
+        // ID verified boost (highest)
+        if ($user->id_verified) {
+            $boost += 10;
+        }
+        
+        return min(100, $score + $boost);
+    }
+    /**
+     * Check if users have any deal breakers
+     */
+    public function checkDealBreakers($user, $targetUser) 
+    {
+        $preferences = $user->preferences;
+        $targetProfile = $targetUser->profile;
+        
+        if (!$preferences || !$targetProfile) {
+            return true; // No preferences set, allow match
+        }
+        
+        // Age deal breaker
+        $targetAge = $targetUser->date_of_birth ? $targetUser->date_of_birth->age : null;
+        if ($targetAge && ($targetAge < $preferences->min_age || $targetAge > $preferences->max_age)) {
+            return false;
+        }
+        
+        // Gender deal breaker
+        if (!empty($preferences->preferred_genders) && !in_array($targetUser->gender, $preferences->preferred_genders)) {
+            return false;
+        }
+        
+        // Location deal breaker (if distance preference is set)
+        if ($preferences->max_distance && $user->latitude && $user->longitude && $targetUser->latitude && $targetUser->longitude) {
+            $distance = $this->calculateDistance($user->latitude, $user->longitude, $targetUser->latitude, $targetUser->longitude);
+            if ($distance > $preferences->max_distance) {
+                return false;
+            }
+        }
+        
+        // Religion deal breaker (if specified as must-have)
+        if (!empty($preferences->religion_importance) && $preferences->religion_importance === 'very_important') {
+            if ($targetProfile->religion && $targetProfile->religion !== $user->profile?->religion) {
+                return false;
+            }
+        }
+        
+        // Education deal breaker (if minimum education is specified)
+        if (!empty($preferences->min_education_level) && !empty($targetProfile->education_level)) {
+            $educationLevels = ['high_school', 'bachelors', 'masters', 'phd'];
+            $userMinIndex = array_search($preferences->min_education_level, $educationLevels);
+            $targetIndex = array_search($targetProfile->education_level, $educationLevels);
+            
+            if ($userMinIndex !== false && $targetIndex !== false && $targetIndex < $userMinIndex) {
+                return false;
+            }
+        }
+        
+        return true; // No deal breakers found
+    }
+    /**
+     * Calculate comprehensive compatibility score between two users
+     */
+    public function calculateCompatibilityScore($user1, $user2) 
+    {
+        $scores = [];
+        $weights = [
+            'age' => 0.20,
+            'location' => 0.15,
+            'education' => 0.15,
+            'religion' => 0.15,
+            'lifestyle' => 0.15,
+            'interests' => 0.20
+        ];
+        
+        // Calculate individual compatibility scores
+        $scores['age'] = $this->calculateAgeCompatibility($user1, $user2);
+        $scores['location'] = $this->calculateLocationCompatibility($user1, $user2);
+        $scores['education'] = $this->calculateEducationCompatibility($user1, $user2);
+        $scores['religion'] = $this->calculateReligionCompatibility($user1, $user2);
+        $scores['lifestyle'] = $this->calculateLifestyleCompatibility($user1, $user2);
+        $scores['interests'] = $this->calculateInterestCompatibility($user1, $user2);
+        
+        // Calculate weighted average
+        $totalScore = 0;
+        $totalWeight = 0;
+        
+        foreach ($scores as $category => $score) {
+            if ($score > 0) { // Only include categories with valid scores
+                $totalScore += $score * $weights[$category];
+                $totalWeight += $weights[$category];
+            }
+        }
+        
+        return $totalWeight > 0 ? ($totalScore / $totalWeight) : 0;
+    }
     public function calculateAgeCompatibility($user1, $user2) {
         $preferences = $user1->preferences;
         $dob = $user2->date_of_birth;
@@ -628,11 +767,225 @@ class MatchingService
         if ($age < $preferences->min_age || $age > $preferences->max_age) return 0;
         return 50.0; // or some positive score for match
     }
-    public function calculateLocationCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
-    public function calculateEducationCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
-    public function calculateReligionCompatibility($user1, $user2) { return 100.0; /* TODO: Implement real logic */ }
-    public function calculateLifestyleCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
-    public function calculateInterestCompatibility($user1, $user2) { return 50.0; /* TODO: Implement real logic */ }
+    /**
+     * Calculate location compatibility based on distance and preferences
+     */
+    public function calculateLocationCompatibility($user1, $user2) 
+    {
+        // If both users have coordinates
+        if ($user1->latitude && $user1->longitude && $user2->latitude && $user2->longitude) {
+            $distance = $this->calculateDistance($user1->latitude, $user1->longitude, $user2->latitude, $user2->longitude);
+            
+            // Score based on distance (closer = higher score)
+            if ($distance <= 10) return 100;      // Same city
+            if ($distance <= 50) return 80;       // Nearby cities
+            if ($distance <= 100) return 60;      // Same region
+            if ($distance <= 500) return 40;      // Same country
+            if ($distance <= 1000) return 20;     // Neighboring countries
+            return 10;                             // Far distance
+        }
+        
+        // Fall back to country/state comparison
+        if ($user1->country_code === $user2->country_code) {
+            if ($user1->current_state === $user2->current_state) {
+                return 80; // Same state
+            }
+            return 50; // Same country, different state
+        }
+        
+        return 20; // Different countries
+    }
+    /**
+     * Calculate education compatibility
+     */
+    public function calculateEducationCompatibility($user1, $user2) 
+    {
+        $profile1 = $user1->profile;
+        $profile2 = $user2->profile;
+        
+        if (!$profile1 || !$profile2 || !$profile1->education_level || !$profile2->education_level) {
+            return 50; // Neutral score if education info is missing
+        }
+        
+        $educationLevels = [
+            'high_school' => 1,
+            'diploma' => 2,
+            'bachelors' => 3,
+            'masters' => 4,
+            'phd' => 5
+        ];
+        
+        $level1 = $educationLevels[$profile1->education_level] ?? 0;
+        $level2 = $educationLevels[$profile2->education_level] ?? 0;
+        
+        $difference = abs($level1 - $level2);
+        
+        // Score based on education level difference
+        switch ($difference) {
+            case 0: return 100; // Same education level
+            case 1: return 80;  // One level difference
+            case 2: return 60;  // Two levels difference
+            case 3: return 40;  // Three levels difference
+            default: return 20; // More than three levels difference
+        }
+    }
+    /**
+     * Calculate religion compatibility
+     */
+    public function calculateReligionCompatibility($user1, $user2) 
+    {
+        $profile1 = $user1->profile;
+        $profile2 = $user2->profile;
+        
+        if (!$profile1 || !$profile2) {
+            return 50; // Neutral score if profile info is missing
+        }
+        
+        $religion1 = $profile1->religion;
+        $religion2 = $profile2->religion;
+        
+        // If religion info is missing for either user
+        if (!$religion1 || !$religion2) {
+            return 50; // Neutral score
+        }
+        
+        // Exact match
+        if ($religion1 === $religion2) {
+            return 100;
+        }
+        
+        // Compatible religions (you can customize this based on your requirements)
+        $compatibleReligions = [
+            'christian' => ['catholic', 'orthodox'],
+            'catholic' => ['christian', 'orthodox'],
+            'orthodox' => ['christian', 'catholic'],
+            'sunni' => ['shia'],
+            'shia' => ['sunni'],
+            'buddhist' => ['hindu'], // In some cultural contexts
+            'hindu' => ['buddhist'],
+        ];
+        
+        if (isset($compatibleReligions[$religion1]) && in_array($religion2, $compatibleReligions[$religion1])) {
+            return 70; // Compatible but not identical
+        }
+        
+        // Non-religious compatibility
+        if (in_array($religion1, ['agnostic', 'atheist', 'non_religious']) && 
+            in_array($religion2, ['agnostic', 'atheist', 'non_religious'])) {
+            return 80;
+        }
+        
+        // Different religions
+        return 20;
+    }
+    /**
+     * Calculate lifestyle compatibility
+     */
+    public function calculateLifestyleCompatibility($user1, $user2) 
+    {
+        $profile1 = $user1->profile;
+        $profile2 = $user2->profile;
+        
+        if (!$profile1 || !$profile2) {
+            return 50; // Neutral score if profile info is missing
+        }
+        
+        $score = 0;
+        $factors = 0;
+        
+        // Smoking habits
+        if (!is_null($profile1->smoking) && !is_null($profile2->smoking)) {
+            if ($profile1->smoking === $profile2->smoking) {
+                $score += 100;
+            } elseif (($profile1->smoking === 'never' && $profile2->smoking === 'occasionally') ||
+                     ($profile1->smoking === 'occasionally' && $profile2->smoking === 'never')) {
+                $score += 70;
+            } else {
+                $score += 30; // One smokes regularly, other doesn't
+            }
+            $factors++;
+        }
+        
+        // Drinking habits
+        if (!is_null($profile1->drinking) && !is_null($profile2->drinking)) {
+            if ($profile1->drinking === $profile2->drinking) {
+                $score += 100;
+            } elseif (($profile1->drinking === 'never' && $profile2->drinking === 'socially') ||
+                     ($profile1->drinking === 'socially' && $profile2->drinking === 'never')) {
+                $score += 70;
+            } else {
+                $score += 30;
+            }
+            $factors++;
+        }
+        
+        // Exercise habits
+        if (!is_null($profile1->exercise_frequency) && !is_null($profile2->exercise_frequency)) {
+            $exerciseCompatibility = [
+                'daily' => ['daily' => 100, 'weekly' => 80, 'occasionally' => 50, 'never' => 20],
+                'weekly' => ['daily' => 80, 'weekly' => 100, 'occasionally' => 70, 'never' => 30],
+                'occasionally' => ['daily' => 50, 'weekly' => 70, 'occasionally' => 100, 'never' => 60],
+                'never' => ['daily' => 20, 'weekly' => 30, 'occasionally' => 60, 'never' => 100]
+            ];
+            
+            if (isset($exerciseCompatibility[$profile1->exercise_frequency][$profile2->exercise_frequency])) {
+                $score += $exerciseCompatibility[$profile1->exercise_frequency][$profile2->exercise_frequency];
+                $factors++;
+            }
+        }
+        
+        // Diet preferences
+        if (!is_null($profile1->diet) && !is_null($profile2->diet)) {
+            if ($profile1->diet === $profile2->diet) {
+                $score += 100;
+            } elseif (($profile1->diet === 'vegetarian' && $profile2->diet === 'vegan') ||
+                     ($profile1->diet === 'vegan' && $profile2->diet === 'vegetarian')) {
+                $score += 80; // Both plant-based
+            } elseif ($profile1->diet === 'omnivore' || $profile2->diet === 'omnivore') {
+                $score += 60; // One is flexible
+            } else {
+                $score += 40;
+            }
+            $factors++;
+        }
+        
+        return $factors > 0 ? ($score / $factors) : 50;
+    }
+    /**
+     * Calculate interest compatibility based on shared interests
+     */
+    public function calculateInterestCompatibility($user1, $user2) 
+    {
+        $interests1 = $user1->interests()->pluck('name')->toArray();
+        $interests2 = $user2->interests()->pluck('name')->toArray();
+        
+        if (empty($interests1) || empty($interests2)) {
+            return 50; // Neutral score if no interests are set
+        }
+        
+        $commonInterests = array_intersect($interests1, $interests2);
+        $totalUniqueInterests = array_unique(array_merge($interests1, $interests2));
+        
+        if (empty($totalUniqueInterests)) {
+            return 50;
+        }
+        
+        // Calculate Jaccard similarity coefficient
+        $similarity = count($commonInterests) / count($totalUniqueInterests);
+        
+        // Convert to percentage and apply some weighting
+        $score = $similarity * 100;
+        
+        // Bonus for having many common interests
+        $commonCount = count($commonInterests);
+        if ($commonCount >= 5) {
+            $score = min(100, $score + 20); // Bonus for 5+ common interests
+        } elseif ($commonCount >= 3) {
+            $score = min(100, $score + 10); // Bonus for 3+ common interests
+        }
+        
+        return max(0, min(100, $score));
+    }
     public function checkMutualMatch($userId1, $userId2) {
         $like1 = \App\Models\UserMatch::where('user_id', $userId1)
             ->where('matched_user_id', $userId2)

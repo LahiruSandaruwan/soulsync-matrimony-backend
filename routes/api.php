@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\Admin\ReportController;
 use App\Http\Controllers\Api\Admin\ContentController;
 use App\Http\Controllers\Api\Admin\SettingsController as AdminSettingsController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\VideoCallController;
 use App\Models\User;
 use App\Http\Controllers\Api\EmailVerificationController;
 
@@ -193,6 +194,16 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('messages/{message}/read', [ChatController::class, 'markAsRead']);
         Route::post('conversations/{conversation}/block', [ChatController::class, 'blockConversation']);
         Route::delete('conversations/{conversation}', [ChatController::class, 'deleteConversation']);
+    });
+    
+    // Video calls
+    Route::prefix('video-calls')->group(function () {
+        Route::get('/', [VideoCallController::class, 'index']);
+        Route::post('initiate', [VideoCallController::class, 'initiate']);
+        Route::get('{videoCall}', [VideoCallController::class, 'show']);
+        Route::post('{videoCall}/accept', [VideoCallController::class, 'accept']);
+        Route::post('{videoCall}/reject', [VideoCallController::class, 'reject']);
+        Route::post('{videoCall}/end', [VideoCallController::class, 'end']);
     });
     
     // Subscriptions and payments
