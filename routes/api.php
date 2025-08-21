@@ -146,6 +146,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('/', [MatchController::class, 'index']);
         Route::get('daily', [MatchController::class, 'dailyMatches']);
         Route::get('suggestions', [MatchController::class, 'suggestions']);
+        Route::get('interaction-status/{user}', [MatchController::class, 'interactionStatus']);
         Route::post('{user}/like', [MatchController::class, 'like']);
         Route::post('{user}/super-like', [MatchController::class, 'superLike']);
         Route::post('{user}/dislike', [MatchController::class, 'dislike']);
@@ -160,8 +161,13 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('/', [SearchController::class, 'search']);
         Route::post('advanced', [SearchController::class, 'advancedSearch']);
         Route::get('filters', [SearchController::class, 'getFilters']);
-        Route::post('save-search', [SearchController::class, 'saveSearch']);
-        Route::get('saved-searches', [SearchController::class, 'savedSearches']);
+        Route::get('interests', [SearchController::class, 'searchByInterests']);
+        Route::get('suggestions', [SearchController::class, 'getSearchSuggestions']);
+        Route::get('recent', [SearchController::class, 'getRecentSearches']);
+        Route::post('save', [SearchController::class, 'saveSearch']);
+        Route::get('saved', [SearchController::class, 'savedSearches']);
+        Route::delete('saved/{search}', [SearchController::class, 'deleteSavedSearch']);
+        Route::get('stats', [SearchController::class, 'getSearchStats']);
     });
     
     // Browse profiles
@@ -186,6 +192,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     
     // Messaging and chat
     Route::prefix('chat')->group(function () {
+        Route::post('start-conversation', [ChatController::class, 'startConversation']);
         Route::get('conversations', [ChatController::class, 'conversations']);
         Route::get('conversations/{conversation}', [ChatController::class, 'show']);
         Route::post('conversations/{conversation}/messages', [ChatController::class, 'sendMessage']);
@@ -223,6 +230,11 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('payment/verify', [SubscriptionController::class, 'verifyPayment']);
         Route::post('payment/refund', [SubscriptionController::class, 'refund']);
     });
+
+    // Payment methods
+    Route::prefix('payment')->group(function () {
+        Route::get('methods', [SubscriptionController::class, 'paymentMethods']);
+    });
     
     // Notifications
     Route::prefix('notifications')->group(function () {
@@ -231,6 +243,8 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('read-all', [NotificationController::class, 'markAllAsRead']);
         Route::post('batch/read', [NotificationController::class, 'markBatchAsRead']);
         Route::post('cleanup', [NotificationController::class, 'cleanup']);
+        Route::post('push-subscription', [NotificationController::class, 'subscribeToPush']);
+        Route::delete('push-subscription', [NotificationController::class, 'unsubscribeFromPush']);
         Route::get('{notification}', [NotificationController::class, 'show']);
         Route::post('{notification}/read', [NotificationController::class, 'markAsRead']);
         Route::delete('{notification}', [NotificationController::class, 'destroy']);

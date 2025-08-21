@@ -554,6 +554,140 @@ class ChatController extends Controller
     }
 
     /**
+     * Start a new conversation with a user
+     */
+    public function startConversation(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|integer|exists:users,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $otherUserId = $request->user_id;
+
+            // Check if user is trying to start conversation with themselves
+            if ($user->id === $otherUserId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot start conversation with yourself'
+                ], 400);
+            }
+
+            // Check if conversation already exists
+            $existingConversation = Conversation::where(function ($query) use ($user, $otherUserId) {
+                $query->where(function ($q) use ($user, $otherUserId) {
+                    $q->where('user_one_id', $user->id)
+                      ->where('user_two_id', $otherUserId);
+                })->orWhere(function ($q) use ($user, $otherUserId) {
+                    $q->where('user_one_id', $otherUserId)
+                      ->where('user_two_id', $user->id);
+                });
+            })->where('status', 'active')->first();
+
+            if ($existingConversation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Conversation already exists',
+                    'data' => [
+                        'conversation_id' => $existingConversation->id,
+                        'conversation' => $this->formatConversation($existingConversation, $user)
+                    ]
+                ], 409);
+            }
+
+            // Check if users are matched (optional requirement)
+            $match = UserMatch::where(function ($query) use ($user, $otherUserId) {
+                $query->where('user_one_id', $user->id)
+                      ->where('user_two_id', $otherUserId)
+                      ->where('status', 'matched');
+            })->orWhere(function ($query) use ($user, $otherUserId) {
+                $query->where('user_one_id', $otherUserId)
+                      ->where('user_two_id', $user->id)
+                      ->where('status', 'matched');
+            })->first();
+
+            if (!$match) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Users must be matched to start a conversation'
+                ], 403);
+            }
+
+            // Create new conversation
+            $conversation = Conversation::create([
+                'user_one_id' => $user->id,
+                'user_two_id' => $otherUserId,
+                'type' => 'direct',
+                'is_group' => false,
+                'status' => 'active',
+                'last_message_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Conversation started successfully',
+                'data' => [
+                    'conversation_id' => $conversation->id,
+                    'conversation' => $this->formatConversation($conversation, $user)
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to start conversation',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Format conversation for response
+     */
+    private function formatConversation(Conversation $conversation, User $currentUser): array
+    {
+        $otherUser = $conversation->user_one_id === $currentUser->id ? $conversation->userTwo : $conversation->userOne;
+        $unreadCount = $conversation->getUnreadCount($currentUser);
+
+        return [
+            'id' => $conversation->id,
+            'name' => $conversation->getDisplayName($currentUser),
+            'type' => $conversation->type,
+            'is_group' => $conversation->is_group,
+            'last_message_at' => $conversation->last_message_at,
+            'unread_count' => $unreadCount,
+            'participants' => [
+                [
+                    'id' => $currentUser->id,
+                    'name' => $currentUser->first_name,
+                ],
+                [
+                    'id' => $otherUser->id,
+                    'name' => $otherUser->first_name,
+                ]
+            ],
+            'last_message' => $conversation->lastMessage ? [
+                'id' => $conversation->lastMessage->id,
+                'content' => $conversation->lastMessage->content,
+                'type' => $conversation->lastMessage->type,
+                'sender_id' => $conversation->lastMessage->sender_id,
+                'sent_at' => $conversation->lastMessage->created_at,
+                'status' => $conversation->lastMessage->status,
+            ] : null,
+        ];
+    }
+
+    /**
      * Delete/Archive a conversation
      */
     public function deleteConversation(Request $request, Conversation $conversation): JsonResponse

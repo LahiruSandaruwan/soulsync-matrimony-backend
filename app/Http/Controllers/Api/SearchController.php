@@ -360,6 +360,161 @@ class SearchController extends Controller
     }
 
     /**
+     * Search users by interests
+     */
+    public function searchByInterests(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'interests' => 'required|array',
+            'interests.*' => 'string|max:255',
+            'page' => 'sometimes|integer|min:1',
+            'limit' => 'sometimes|integer|min:1|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $interests = $request->interests;
+            $page = $request->get('page', 1);
+            $limit = $request->get('limit', 20);
+            $offset = ($page - 1) * $limit;
+
+            // Search users who have matching interests
+            $query = User::where('id', '!=', $user->id)
+                ->where('status', 'active')
+                ->whereHas('interests', function ($q) use ($interests) {
+                    $q->whereIn('name', $interests);
+                })
+                ->with(['profile', 'photos' => function ($q) {
+                    $q->where('status', 'approved')->orderBy('is_profile_picture', 'desc');
+                }])
+                ->orderBy('last_active_at', 'desc');
+
+            $totalCount = $query->count();
+            $users = $query->offset($offset)->limit($limit)->get();
+
+            $formattedUsers = $users->map(function ($user) {
+                return $this->formatUserForSearch($user);
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedUsers,
+                'total' => $totalCount,
+                'has_more' => ($offset + $limit) < $totalCount,
+                'current_page' => $page,
+                'per_page' => $limit,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search by interests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get recent searches for the user
+     */
+    public function getRecentSearches(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        try {
+            $recentSearches = \App\Models\SavedSearch::getUserSearchHistory($user, 10);
+
+            return response()->json([
+                'success' => true,
+                'searches' => $recentSearches
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get recent searches',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a saved search
+     */
+    public function deleteSavedSearch(Request $request, $searchId): JsonResponse
+    {
+        $user = $request->user();
+
+        try {
+            $savedSearch = \App\Models\SavedSearch::where('id', $searchId)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$savedSearch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Saved search not found'
+                ], 404);
+            }
+
+            $savedSearch->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Saved search deleted successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete saved search',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get search statistics
+     */
+    public function getSearchStats(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        try {
+            $stats = [
+                'total_searches' => \App\Models\SavedSearch::where('user_id', $user->id)->count(),
+                'saved_searches' => \App\Models\SavedSearch::where('user_id', $user->id)->where('is_saved', true)->count(),
+                'recent_searches' => \App\Models\SavedSearch::where('user_id', $user->id)
+                    ->where('created_at', '>=', now()->subDays(7))
+                    ->count(),
+                'popular_filters' => $this->getPopularFilters($user),
+                'search_trends' => $this->getSearchTrends($user),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $stats
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get search statistics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Core search functionality
      */
     private function performSearch(User $currentUser, array $filters): array
@@ -809,6 +964,62 @@ class SearchController extends Controller
             ['label' => 'With Photos', 'filters' => ['has_photo' => true]],
             ['label' => 'Recently Active', 'filters' => ['online_status' => 'recently_active']],
         ];
+    }
+
+    /**
+     * Get popular filters used by the user
+     */
+    private function getPopularFilters(User $user): array
+    {
+        $searches = \App\Models\SavedSearch::where('user_id', $user->id)
+            ->whereNotNull('filters')
+            ->get();
+
+        $filterCounts = [];
+        foreach ($searches as $search) {
+            $filters = json_decode($search->filters, true);
+            if ($filters) {
+                foreach ($filters as $key => $value) {
+                    if (!isset($filterCounts[$key])) {
+                        $filterCounts[$key] = [];
+                    }
+                    if (!isset($filterCounts[$key][$value])) {
+                        $filterCounts[$key][$value] = 0;
+                    }
+                    $filterCounts[$key][$value]++;
+                }
+            }
+        }
+
+        // Get top 3 most used values for each filter
+        $popularFilters = [];
+        foreach ($filterCounts as $filter => $values) {
+            arsort($values);
+            $popularFilters[$filter] = array_slice($values, 0, 3, true);
+        }
+
+        return $popularFilters;
+    }
+
+    /**
+     * Get search trends for the user
+     */
+    private function getSearchTrends(User $user): array
+    {
+        $trends = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $date = now()->subDays($i);
+            $count = \App\Models\SavedSearch::where('user_id', $user->id)
+                ->whereDate('created_at', $date)
+                ->count();
+            
+            $trends[] = [
+                'date' => $date->format('Y-m-d'),
+                'count' => $count
+            ];
+        }
+
+        return $trends;
     }
 
     /**

@@ -519,6 +519,22 @@ class SubscriptionController extends Controller
     }
 
     /**
+     * Get available payment methods for the authenticated user
+     */
+    public function paymentMethods(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $userCountry = $user->country_code ?? 'US';
+        
+        $paymentMethods = $this->getAvailablePaymentMethods($userCountry);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $paymentMethods
+        ]);
+    }
+
+    /**
      * Get available payment methods by country
      */
     private function getAvailablePaymentMethods(string $countryCode): array

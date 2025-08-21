@@ -585,6 +585,109 @@ class NotificationController extends Controller
     }
 
     /**
+     * Subscribe to push notifications
+     */
+    public function subscribeToPush(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'endpoint' => 'required|string|url',
+            'keys.p256dh' => 'required|string',
+            'keys.auth' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $subscriptionData = $validator->validated();
+            
+            // Store push subscription in user's device tokens
+            $deviceTokens = $user->device_tokens ?? [];
+            $deviceTokens[] = [
+                'endpoint' => $subscriptionData['endpoint'],
+                'p256dh' => $subscriptionData['keys']['p256dh'],
+                'auth' => $subscriptionData['keys']['auth'],
+                'created_at' => now()->toISOString(),
+            ];
+
+            $user->update([
+                'device_tokens' => $deviceTokens,
+                'push_notifications_enabled' => true,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Successfully subscribed to push notifications'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to subscribe to push notifications',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Unsubscribe from push notifications
+     */
+    public function unsubscribeFromPush(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'endpoint' => 'sometimes|string|url',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $deviceTokens = $user->device_tokens ?? [];
+            
+            if ($request->has('endpoint')) {
+                // Remove specific endpoint
+                $deviceTokens = array_filter($deviceTokens, function ($token) use ($request) {
+                    return $token['endpoint'] !== $request->endpoint;
+                });
+            } else {
+                // Remove all push subscriptions
+                $deviceTokens = [];
+            }
+
+            $user->update([
+                'device_tokens' => $deviceTokens,
+                'push_notifications_enabled' => !empty($deviceTokens),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Successfully unsubscribed from push notifications'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to unsubscribe from push notifications',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get notification statistics
      */
     public function getStatistics(Request $request): JsonResponse

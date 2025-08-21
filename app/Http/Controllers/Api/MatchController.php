@@ -543,6 +543,85 @@ class MatchController extends Controller
     }
 
     /**
+     * Get interaction status with a specific user
+     */
+    public function interactionStatus(Request $request, int $userId): JsonResponse
+    {
+        $user = $request->user();
+
+        try {
+            // Check if target user exists
+            $targetUser = User::find($userId);
+            if (!$targetUser) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Check if user is trying to check interaction with themselves
+            if ($user->id === $userId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot check interaction with yourself'
+                ], 400);
+            }
+
+            // Get interaction status
+            $match = UserMatch::where(function ($query) use ($user, $userId) {
+                $query->where('user_one_id', $user->id)
+                      ->where('user_two_id', $userId);
+            })->orWhere(function ($query) use ($user, $userId) {
+                $query->where('user_one_id', $userId)
+                      ->where('user_two_id', $user->id);
+            })->first();
+
+            $isLiked = false;
+            $isSuperLiked = false;
+            $isBlocked = false;
+            $isMatched = false;
+
+            if ($match) {
+                // Check if current user liked the target user
+                if ($match->user_one_id === $user->id) {
+                    $isLiked = in_array($match->user_one_action, ['liked', 'super_liked']);
+                    $isSuperLiked = $match->user_one_action === 'super_liked';
+                } else {
+                    $isLiked = in_array($match->user_two_action, ['liked', 'super_liked']);
+                    $isSuperLiked = $match->user_two_action === 'super_liked';
+                }
+
+                // Check if it's a mutual match
+                $isMatched = $match->status === 'matched';
+
+                // Check if either user blocked the other
+                $isBlocked = in_array($match->user_one_action, ['blocked']) || 
+                            in_array($match->user_two_action, ['blocked']);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'is_liked' => $isLiked,
+                    'is_super_liked' => $isSuperLiked,
+                    'is_blocked' => $isBlocked,
+                    'is_matched' => $isMatched,
+                    'match_id' => $match?->id,
+                    'match_status' => $match?->status,
+                    'can_communicate' => $isMatched && !$isBlocked,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get interaction status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Format potential match for API response
      */
     private function formatPotentialMatch(User $user): array
