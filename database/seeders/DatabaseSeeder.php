@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
         // Run roles and permissions seeder first
         $this->call([
             RolesAndPermissionsSeeder::class,
+            AdminSettingsSeeder::class,
         ]);
 
         // Create admin user

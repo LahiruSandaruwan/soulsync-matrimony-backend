@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\VideoCallController;
 use App\Models\User;
 use App\Http\Controllers\Api\EmailVerificationController;
+use App\Http\Controllers\Api\PublicConfigController;
 
 /*
 |--------------------------------------------------------------------------
@@ -59,6 +60,7 @@ Route::prefix('v1')->group(function () {
     
     // Public data routes (for browsing without login)
     Route::prefix('public')->group(function () {
+        Route::get('config', [PublicConfigController::class, 'index']);
         Route::get('interests', [InterestController::class, 'index']);
         Route::get('countries', [LocationController::class, 'countries']);
         Route::get('states/{country}', [LocationController::class, 'states']);
