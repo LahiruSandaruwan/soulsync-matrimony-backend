@@ -558,18 +558,57 @@ class SubscriptionController extends Controller
      */
     private function processPayment(string $method, array $pricing, string $token, User $user): array
     {
-        // This is a placeholder - actual implementation would integrate with payment gateways
-        switch ($method) {
-            case 'stripe':
-                return $this->processStripePayment($pricing, $token, $user);
-            case 'paypal':
-                return $this->processPayPalPayment($pricing, $token, $user);
-            case 'payhere':
-                return $this->processPayHerePayment($pricing, $token, $user);
-            case 'webxpay':
-                return $this->processWebXPayPayment($pricing, $token, $user);
-            default:
+        try {
+            // Validate payment method
+            if (!in_array($method, ['stripe', 'paypal', 'payhere', 'webxpay'])) {
                 return ['success' => false, 'error' => 'Unsupported payment method'];
+            }
+
+            // Validate pricing data
+            if (!isset($pricing['amount_usd']) || !isset($pricing['amount_local']) || !isset($pricing['currency'])) {
+                return ['success' => false, 'error' => 'Invalid pricing data'];
+            }
+
+            // Validate token
+            if (empty($token)) {
+                return ['success' => false, 'error' => 'Payment token is required'];
+            }
+
+            // Log payment attempt
+            Log::info('Payment processing started', [
+                'user_id' => $user->id,
+                'method' => $method,
+                'amount_usd' => $pricing['amount_usd'],
+                'amount_local' => $pricing['amount_local'],
+                'currency' => $pricing['currency']
+            ]);
+
+            // Process payment based on method
+            switch ($method) {
+                case 'stripe':
+                    return $this->processStripePayment($pricing, $token, $user);
+                case 'paypal':
+                    return $this->processPayPalPayment($pricing, $token, $user);
+                case 'payhere':
+                    return $this->processPayHerePayment($pricing, $token, $user);
+                case 'webxpay':
+                    return $this->processWebXPayPayment($pricing, $token, $user);
+                default:
+                    return ['success' => false, 'error' => 'Unsupported payment method'];
+            }
+        } catch (Exception $e) {
+            Log::error('Payment processing failed', [
+                'user_id' => $user->id,
+                'method' => $method,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Payment processing failed. Please try again.',
+                'debug_message' => config('app.debug') ? $e->getMessage() : null
+            ];
         }
     }
 

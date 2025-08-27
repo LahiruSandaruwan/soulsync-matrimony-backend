@@ -640,108 +640,283 @@ class SettingsController extends Controller
     }
 
     /**
-     * Generate PDF export
+     * Generate comprehensive PDF export with advanced styling and data visualization
      */
     private function generatePDFExport($userData, $user)
     {
         try {
-            // Create new PDF document
+            // Create new PDF document with custom settings
             $pdf = new \TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
             
             // Set document information
             $pdf->SetCreator('SoulSync Matrimony');
             $pdf->SetAuthor('SoulSync System');
-            $pdf->SetTitle('User Data Export - ' . $user->first_name . ' ' . $user->last_name);
-            $pdf->SetSubject('Personal Data Export');
+            $pdf->SetTitle('Personal Data Export - ' . $user->first_name . ' ' . $user->last_name);
+            $pdf->SetSubject('Comprehensive Personal Data Export');
+            $pdf->SetKeywords('matrimony, personal data, export, SoulSync');
             
-            // Set default header data
-            $pdf->SetHeaderData('', 0, 'SoulSync Matrimony', 'Personal Data Export', array(0,0,0), array(0,0,0));
-            $pdf->setFooterData(array(0,0,0), array(0,0,0));
+            // Set default header and footer
+            $pdf->SetHeaderData('', 0, 'SoulSync Matrimony', 'Personal Data Export', array(51, 51, 51), array(236, 72, 153));
+            $pdf->setFooterData(array(51, 51, 51), array(236, 72, 153));
             
             // Set header and footer fonts
-            $pdf->setHeaderFont(Array(PDF_FONT_NAME_MAIN, '', PDF_FONT_SIZE_MAIN));
-            $pdf->setFooterFont(Array(PDF_FONT_NAME_DATA, '', PDF_FONT_SIZE_DATA));
+            $pdf->setHeaderFont(Array('helvetica', 'B', 14));
+            $pdf->setFooterFont(Array('helvetica', '', 10));
             
             // Set default monospaced font
-            $pdf->SetDefaultMonospacedFont(PDF_FONT_MONOSPACED);
+            $pdf->SetDefaultMonospacedFont('courier');
             
             // Set margins
-            $pdf->SetMargins(PDF_MARGIN_LEFT, PDF_MARGIN_TOP, PDF_MARGIN_RIGHT);
-            $pdf->SetHeaderMargin(PDF_MARGIN_HEADER);
-            $pdf->SetFooterMargin(PDF_MARGIN_FOOTER);
+            $pdf->SetMargins(15, 25, 15);
+            $pdf->SetHeaderMargin(5);
+            $pdf->SetFooterMargin(10);
             
             // Set auto page breaks
-            $pdf->SetAutoPageBreak(TRUE, PDF_MARGIN_BOTTOM);
+            $pdf->SetAutoPageBreak(TRUE, 25);
             
             // Set image scale factor
             $pdf->setImageScale(PDF_IMAGE_SCALE_RATIO);
+            
+            // Set default font subsetting mode
+            $pdf->setFontSubsetting(true);
             
             // Add a page
             $pdf->AddPage();
             
             // Set font
-            $pdf->SetFont('helvetica', '', 12);
+            $pdf->SetFont('helvetica', '', 10);
             
-            // Add content
-            $html = '<h1>Personal Data Export</h1>';
-            $html .= '<h2>User Information</h2>';
-            $html .= '<table border="1" cellpadding="5">';
-            $html .= '<tr><td><strong>Name:</strong></td><td>' . $user->first_name . ' ' . $user->last_name . '</td></tr>';
-            $html .= '<tr><td><strong>Email:</strong></td><td>' . $user->email . '</td></tr>';
-            $html .= '<tr><td><strong>Registration Date:</strong></td><td>' . $user->created_at->format('Y-m-d H:i:s') . '</td></tr>';
-            $html .= '<tr><td><strong>Gender:</strong></td><td>' . $user->gender . '</td></tr>';
-            $html .= '<tr><td><strong>Date of Birth:</strong></td><td>' . $user->date_of_birth . '</td></tr>';
-            $html .= '</table>';
-            
-            $html .= '<h2>Profile Statistics</h2>';
-            $html .= '<table border="1" cellpadding="5">';
-            $html .= '<tr><td><strong>Total Matches:</strong></td><td>' . count($userData['matches']) . '</td></tr>';
-            $html .= '<tr><td><strong>Total Messages:</strong></td><td>' . count($userData['messages']) . '</td></tr>';
-            $html .= '<tr><td><strong>Total Photos:</strong></td><td>' . count($userData['photos']) . '</td></tr>';
-            $html .= '<tr><td><strong>Profile Completion:</strong></td><td>' . $this->calculateProfileCompletion($user) . '%</td></tr>';
-            $html .= '</table>';
-            
-            if (!empty($userData['matches'])) {
-                $html .= '<h2>Recent Matches</h2>';
-                $html .= '<table border="1" cellpadding="5">';
-                $html .= '<tr><th>Name</th><th>Match Date</th><th>Compatibility</th></tr>';
-                foreach (array_slice($userData['matches'], 0, 10) as $match) {
-                    $html .= '<tr><td>' . $match['name'] . '</td><td>' . $match['created_at'] . '</td><td>' . $match['compatibility_score'] . '%</td></tr>';
-                }
-                $html .= '</table>';
-            }
-            
-            if (!empty($userData['messages'])) {
-                $html .= '<h2>Recent Messages</h2>';
-                $html .= '<table border="1" cellpadding="5">';
-                $html .= '<tr><th>Conversation</th><th>Message</th><th>Date</th></tr>';
-                foreach (array_slice($userData['messages'], 0, 10) as $message) {
-                    $html .= '<tr><td>' . $message['conversation_id'] . '</td><td>' . substr($message['content'], 0, 50) . '...</td><td>' . $message['created_at'] . '</td></tr>';
-                }
-                $html .= '</table>';
-            }
+            // Generate comprehensive HTML content
+            $html = $this->generatePDFHTML($userData, $user);
             
             // Print text using writeHTMLCell()
             $pdf->writeHTML($html, true, false, true, false, '');
             
+            // Add additional pages for detailed data if needed
+            if (count($userData['matches']) > 10 || count($userData['messages']) > 10) {
+                $this->addDetailedDataPages($pdf, $userData, $user);
+            }
+            
             // Close and output PDF document
-            $pdfContent = $pdf->Output('soulsync_data_export.pdf', 'S');
+            $pdfContent = $pdf->Output('soulsync_comprehensive_export.pdf', 'S');
             
             return response($pdfContent)
                 ->header('Content-Type', 'application/pdf')
-                ->header('Content-Disposition', 'attachment; filename="soulsync_data_export.pdf"');
+                ->header('Content-Disposition', 'attachment; filename="soulsync_comprehensive_export.pdf"');
                 
         } catch (\Exception $e) {
-            \Log::error('PDF generation failed', [
+            \Log::error('PDF export failed', [
                 'user_id' => $user->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate PDF export',
-                'error' => $e->getMessage()
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
+        }
+    }
+    
+    /**
+     * Generate comprehensive HTML content for PDF
+     */
+    private function generatePDFHTML($userData, $user): string
+    {
+        $html = '
+        <style>
+            .header { background-color: #ec4899; color: white; padding: 10px; text-align: center; font-size: 18px; font-weight: bold; }
+            .section { margin: 15px 0; }
+            .section-title { background-color: #f3f4f6; padding: 8px; font-size: 14px; font-weight: bold; color: #374151; }
+            .info-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            .info-table th { background-color: #ec4899; color: white; padding: 8px; text-align: left; }
+            .info-table td { padding: 8px; border: 1px solid #d1d5db; }
+            .stats-grid { display: table; width: 100%; margin: 10px 0; }
+            .stats-cell { display: table-cell; width: 25%; padding: 10px; text-align: center; background-color: #f9fafb; border: 1px solid #e5e7eb; }
+            .stats-number { font-size: 24px; font-weight: bold; color: #ec4899; }
+            .stats-label { font-size: 12px; color: #6b7280; }
+            .match-table, .message-table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 9px; }
+            .match-table th, .message-table th { background-color: #f3f4f6; padding: 6px; text-align: left; font-weight: bold; }
+            .match-table td, .message-table td { padding: 6px; border: 1px solid #d1d5db; }
+            .photo-grid { display: table; width: 100%; margin: 10px 0; }
+            .photo-cell { display: table-cell; width: 33.33%; padding: 5px; text-align: center; }
+            .compatibility-high { color: #059669; font-weight: bold; }
+            .compatibility-medium { color: #d97706; font-weight: bold; }
+            .compatibility-low { color: #dc2626; font-weight: bold; }
+        </style>
+        ';
+        
+        // Header
+        $html .= '<div class="header">Personal Data Export Report</div>';
+        
+        // User Information Section
+        $html .= '<div class="section">';
+        $html .= '<div class="section-title">Personal Information</div>';
+        $html .= '<table class="info-table">';
+        $html .= '<tr><th colspan="2">Basic Information</th></tr>';
+        $html .= '<tr><td><strong>Full Name:</strong></td><td>' . htmlspecialchars($user->first_name . ' ' . $user->last_name) . '</td></tr>';
+        $html .= '<tr><td><strong>Email Address:</strong></td><td>' . htmlspecialchars($user->email) . '</td></tr>';
+        $html .= '<tr><td><strong>Phone Number:</strong></td><td>' . htmlspecialchars($user->phone ?? 'Not provided') . '</td></tr>';
+        $html .= '<tr><td><strong>Date of Birth:</strong></td><td>' . htmlspecialchars($user->date_of_birth) . '</td></tr>';
+        $html .= '<tr><td><strong>Gender:</strong></td><td>' . htmlspecialchars(ucfirst($user->gender)) . '</td></tr>';
+        $html .= '<tr><td><strong>Registration Date:</strong></td><td>' . $user->created_at->format('F j, Y \a\t g:i A') . '</td></tr>';
+        $html .= '<tr><td><strong>Last Active:</strong></td><td>' . ($user->last_active_at ? $user->last_active_at->format('F j, Y \a\t g:i A') : 'Never') . '</td></tr>';
+        $html .= '</table>';
+        $html .= '</div>';
+        
+        // Profile Statistics Section
+        $html .= '<div class="section">';
+        $html .= '<div class="section-title">Profile Statistics</div>';
+        $html .= '<div class="stats-grid">';
+        $html .= '<div class="stats-cell"><div class="stats-number">' . count($userData['matches']) . '</div><div class="stats-label">Total Matches</div></div>';
+        $html .= '<div class="stats-cell"><div class="stats-number">' . count($userData['messages']) . '</div><div class="stats-label">Total Messages</div></div>';
+        $html .= '<div class="stats-cell"><div class="stats-number">' . count($userData['photos']) . '</div><div class="stats-label">Profile Photos</div></div>';
+        $html .= '<div class="stats-cell"><div class="stats-number">' . $this->calculateProfileCompletion($user) . '%</div><div class="stats-label">Profile Complete</div></div>';
+        $html .= '</div>';
+        $html .= '</div>';
+        
+        // Profile Details Section
+        if ($user->profile) {
+            $html .= '<div class="section">';
+            $html .= '<div class="section-title">Profile Details</div>';
+            $html .= '<table class="info-table">';
+            $html .= '<tr><th colspan="2">Personal & Family Information</th></tr>';
+            $html .= '<tr><td><strong>Religion:</strong></td><td>' . htmlspecialchars($user->profile->religion ?? 'Not specified') . '</td></tr>';
+            $html .= '<tr><td><strong>Mother Tongue:</strong></td><td>' . htmlspecialchars($user->profile->mother_tongue ?? 'Not specified') . '</td></tr>';
+            $html .= '<tr><td><strong>Education:</strong></td><td>' . htmlspecialchars($user->profile->education ?? 'Not specified') . '</td></tr>';
+            $html .= '<tr><td><strong>Occupation:</strong></td><td>' . htmlspecialchars($user->profile->occupation ?? 'Not specified') . '</td></tr>';
+            $html .= '<tr><td><strong>Annual Income:</strong></td><td>' . htmlspecialchars($user->profile->annual_income_usd ? '$' . number_format($user->profile->annual_income_usd) : 'Not specified') . '</td></tr>';
+            $html .= '<tr><td><strong>Current City:</strong></td><td>' . htmlspecialchars($user->profile->current_city ?? 'Not specified') . '</td></tr>';
+            $html .= '<tr><td><strong>Current State:</strong></td><td>' . htmlspecialchars($user->profile->current_state ?? 'Not specified') . '</td></tr>';
+            $html .= '<tr><td><strong>Current Country:</strong></td><td>' . htmlspecialchars($user->profile->current_country ?? 'Not specified') . '</td></tr>';
+            $html .= '</table>';
+            $html .= '</div>';
+        }
+        
+        // Recent Matches Section
+        if (!empty($userData['matches'])) {
+            $html .= '<div class="section">';
+            $html .= '<div class="section-title">Recent Matches (Last 10)</div>';
+            $html .= '<table class="match-table">';
+            $html .= '<tr><th>Name</th><th>Age</th><th>Location</th><th>Match Date</th><th>Compatibility</th></tr>';
+            
+            foreach (array_slice($userData['matches'], 0, 10) as $match) {
+                $compatibilityClass = $match['compatibility_score'] >= 80 ? 'compatibility-high' : 
+                                    ($match['compatibility_score'] >= 60 ? 'compatibility-medium' : 'compatibility-low');
+                
+                $html .= '<tr>';
+                $html .= '<td>' . htmlspecialchars($match['name']) . '</td>';
+                $html .= '<td>' . htmlspecialchars($match['age'] ?? 'N/A') . '</td>';
+                $html .= '<td>' . htmlspecialchars($match['location'] ?? 'N/A') . '</td>';
+                $html .= '<td>' . htmlspecialchars($match['created_at']) . '</td>';
+                $html .= '<td class="' . $compatibilityClass . '">' . $match['compatibility_score'] . '%</td>';
+                $html .= '</tr>';
+            }
+            $html .= '</table>';
+            $html .= '</div>';
+        }
+        
+        // Recent Messages Section
+        if (!empty($userData['messages'])) {
+            $html .= '<div class="section">';
+            $html .= '<div class="section-title">Recent Messages (Last 10)</div>';
+            $html .= '<table class="message-table">';
+            $html .= '<tr><th>Conversation</th><th>Message Preview</th><th>Date</th><th>Type</th></tr>';
+            
+            foreach (array_slice($userData['messages'], 0, 10) as $message) {
+                $messagePreview = strlen($message['content']) > 50 ? 
+                    htmlspecialchars(substr($message['content'], 0, 50)) . '...' : 
+                    htmlspecialchars($message['content']);
+                
+                $html .= '<tr>';
+                $html .= '<td>' . htmlspecialchars($message['conversation_id']) . '</td>';
+                $html .= '<td>' . $messagePreview . '</td>';
+                $html .= '<td>' . htmlspecialchars($message['created_at']) . '</td>';
+                $html .= '<td>' . htmlspecialchars(ucfirst($message['type'] ?? 'text')) . '</td>';
+                $html .= '</tr>';
+            }
+            $html .= '</table>';
+            $html .= '</div>';
+        }
+        
+        // Profile Photos Section
+        if (!empty($userData['photos'])) {
+            $html .= '<div class="section">';
+            $html .= '<div class="section-title">Profile Photos</div>';
+            $html .= '<div class="photo-grid">';
+            
+            foreach (array_slice($userData['photos'], 0, 6) as $photo) {
+                $html .= '<div class="photo-cell">';
+                $html .= '<strong>' . htmlspecialchars($photo['caption'] ?? 'Photo') . '</strong><br>';
+                $html .= '<small>Uploaded: ' . htmlspecialchars($photo['created_at']) . '</small><br>';
+                $html .= '<small>Status: ' . htmlspecialchars(ucfirst($photo['status'] ?? 'pending')) . '</small>';
+                $html .= '</div>';
+            }
+            $html .= '</div>';
+            $html .= '</div>';
+        }
+        
+        // Footer
+        $html .= '<div style="margin-top: 30px; padding: 10px; background-color: #f3f4f6; text-align: center; font-size: 10px; color: #6b7280;">';
+        $html .= 'Generated on ' . now()->format('F j, Y \a\t g:i A') . ' | SoulSync Matrimony Platform';
+        $html .= '</div>';
+        
+        return $html;
+    }
+    
+    /**
+     * Add detailed data pages for large datasets
+     */
+    private function addDetailedDataPages($pdf, $userData, $user): void
+    {
+        // Add detailed matches page if there are more than 10 matches
+        if (count($userData['matches']) > 10) {
+            $pdf->AddPage();
+            $pdf->SetFont('helvetica', 'B', 14);
+            $pdf->Cell(0, 10, 'Complete Match History', 0, 1, 'C');
+            $pdf->SetFont('helvetica', '', 10);
+            
+            $html = '<table border="1" cellpadding="5" style="font-size: 9px;">';
+            $html .= '<tr style="background-color: #ec4899; color: white;"><th>Name</th><th>Age</th><th>Location</th><th>Match Date</th><th>Compatibility</th><th>Status</th></tr>';
+            
+            foreach ($userData['matches'] as $match) {
+                $html .= '<tr>';
+                $html .= '<td>' . htmlspecialchars($match['name']) . '</td>';
+                $html .= '<td>' . htmlspecialchars($match['age'] ?? 'N/A') . '</td>';
+                $html .= '<td>' . htmlspecialchars($match['location'] ?? 'N/A') . '</td>';
+                $html .= '<td>' . htmlspecialchars($match['created_at']) . '</td>';
+                $html .= '<td>' . $match['compatibility_score'] . '%</td>';
+                $html .= '<td>' . htmlspecialchars(ucfirst($match['status'] ?? 'active')) . '</td>';
+                $html .= '</tr>';
+            }
+            $html .= '</table>';
+            
+            $pdf->writeHTML($html, true, false, true, false, '');
+        }
+        
+        // Add detailed messages page if there are more than 10 messages
+        if (count($userData['messages']) > 10) {
+            $pdf->AddPage();
+            $pdf->SetFont('helvetica', 'B', 14);
+            $pdf->Cell(0, 10, 'Complete Message History', 0, 1, 'C');
+            $pdf->SetFont('helvetica', '', 10);
+            
+            $html = '<table border="1" cellpadding="5" style="font-size: 9px;">';
+            $html .= '<tr style="background-color: #ec4899; color: white;"><th>Conversation</th><th>Message</th><th>Date</th><th>Type</th><th>Status</th></tr>';
+            
+            foreach ($userData['messages'] as $message) {
+                $html .= '<tr>';
+                $html .= '<td>' . htmlspecialchars($message['conversation_id']) . '</td>';
+                $html .= '<td>' . htmlspecialchars(substr($message['content'], 0, 100)) . '</td>';
+                $html .= '<td>' . htmlspecialchars($message['created_at']) . '</td>';
+                $html .= '<td>' . htmlspecialchars(ucfirst($message['type'] ?? 'text')) . '</td>';
+                $html .= '<td>' . htmlspecialchars(ucfirst($message['status'] ?? 'sent')) . '</td>';
+                $html .= '</tr>';
+            }
+            $html .= '</table>';
+            
+            $pdf->writeHTML($html, true, false, true, false, '');
         }
     }
 
