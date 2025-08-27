@@ -425,15 +425,50 @@ class ProfileController extends Controller
         try {
             $user = $request->user();
             
-            // This feature requires a separate profile_views table
-            // For now, return placeholder data
+            // Get recent profile visitors
+            $visitors = \DB::table('profile_views')
+                ->join('users', 'profile_views.viewer_id', '=', 'users.id')
+                ->where('profile_views.profile_user_id', $user->id)
+                ->where('profile_views.viewer_id', '!=', $user->id) // Exclude self-views
+                ->select([
+                    'users.id',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.email',
+                    'profile_views.viewed_at',
+                    'profile_views.view_count'
+                ])
+                ->orderBy('profile_views.viewed_at', 'desc')
+                ->limit(20)
+                ->get();
+            
+            // Get total view count
+            $totalViews = \DB::table('profile_views')
+                ->where('profile_user_id', $user->id)
+                ->where('viewer_id', '!=', $user->id)
+                ->sum('view_count');
+            
+            // Get recent views count (last 7 days)
+            $recentViews = \DB::table('profile_views')
+                ->where('profile_user_id', $user->id)
+                ->where('viewer_id', '!=', $user->id)
+                ->where('viewed_at', '>=', now()->subDays(7))
+                ->sum('view_count');
             
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'visitors' => [],
-                    'total_views' => $user->profile_views_received ?? 0,
-                    'recent_views' => 0,
+                    'visitors' => $visitors->map(function ($visitor) {
+                        return [
+                            'id' => $visitor->id,
+                            'name' => $visitor->first_name . ' ' . $visitor->last_name,
+                            'email' => $visitor->email,
+                            'viewed_at' => $visitor->viewed_at,
+                            'view_count' => $visitor->view_count
+                        ];
+                    }),
+                    'total_views' => $totalViews,
+                    'recent_views' => $recentViews,
                 ]
             ]);
 

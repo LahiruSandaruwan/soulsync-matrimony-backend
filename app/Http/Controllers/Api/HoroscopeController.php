@@ -582,9 +582,318 @@ class HoroscopeController extends Controller
      */
     private function findAstrologicalMatches(User $user, array $filters): array
     {
-        // This would implement a complex query to find compatible horoscopes
-        // For now, return a simplified version
-        return [];
+        try {
+            $userHoroscope = $user->horoscope;
+            if (!$userHoroscope) {
+                return [];
+            }
+            
+            $userZodiac = $userHoroscope->zodiac_sign;
+            $userNakshatra = $userHoroscope->nakshatra;
+            $userRashi = $userHoroscope->rashi;
+            
+            // Build query for compatible users
+            $query = User::with(['horoscope', 'profile'])
+                ->where('id', '!=', $user->id)
+                ->where('gender', $user->profile->looking_for ?? 'male')
+                ->whereHas('horoscope');
+            
+            // Apply age filters
+            if (isset($filters['min_age'])) {
+                $minDate = now()->subYears($filters['min_age']);
+                $query->where('date_of_birth', '<=', $minDate);
+            }
+            
+            if (isset($filters['max_age'])) {
+                $maxDate = now()->subYears($filters['max_age']);
+                $query->where('date_of_birth', '>=', $maxDate);
+            }
+            
+            // Apply location filters
+            if (isset($filters['location'])) {
+                $query->whereHas('profile', function($q) use ($filters) {
+                    $q->where('current_city', 'like', '%' . $filters['location'] . '%')
+                      ->orWhere('current_state', 'like', '%' . $filters['location'] . '%')
+                      ->orWhere('current_country', 'like', '%' . $filters['location'] . '%');
+                });
+            }
+            
+            // Get potential matches
+            $potentialMatches = $query->limit(50)->get();
+            
+            $astrologicalMatches = [];
+            
+            foreach ($potentialMatches as $match) {
+                $matchHoroscope = $match->horoscope;
+                if (!$matchHoroscope) continue;
+                
+                // Calculate astrological compatibility
+                $compatibility = $this->calculateAstrologicalCompatibility(
+                    $userHoroscope, 
+                    $matchHoroscope
+                );
+                
+                // Only include matches with good astrological compatibility
+                if ($compatibility['score'] >= 60) {
+                    $astrologicalMatches[] = [
+                        'user' => [
+                            'id' => $match->id,
+                            'first_name' => $match->first_name,
+                            'last_name' => $match->last_name,
+                            'email' => $match->email,
+                            'date_of_birth' => $match->date_of_birth,
+                            'profile' => $match->profile ? [
+                                'current_city' => $match->profile->current_city,
+                                'occupation' => $match->profile->occupation,
+                                'education_level' => $match->profile->education_level,
+                            ] : null
+                        ],
+                        'horoscope' => [
+                            'zodiac_sign' => $matchHoroscope->zodiac_sign,
+                            'nakshatra' => $matchHoroscope->nakshatra,
+                            'rashi' => $matchHoroscope->rashi,
+                            'mangal_dosha' => $matchHoroscope->mangal_dosha,
+                        ],
+                        'compatibility' => $compatibility,
+                        'match_score' => $compatibility['score']
+                    ];
+                }
+            }
+            
+            // Sort by compatibility score
+            usort($astrologicalMatches, function($a, $b) {
+                return $b['match_score'] <=> $a['match_score'];
+            });
+            
+            return array_slice($astrologicalMatches, 0, 20); // Return top 20 matches
+            
+        } catch (\Exception $e) {
+            \Log::error('Astrological matching failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return [];
+        }
+    }
+    
+    /**
+     * Calculate comprehensive astrological compatibility
+     */
+    private function calculateAstrologicalCompatibility($horoscope1, $horoscope2): array
+    {
+        $score = 0;
+        $factors = [];
+        
+        // 1. Zodiac Sign Compatibility (30 points)
+        $zodiacCompatibility = $this->calculateZodiacCompatibility(
+            $horoscope1->zodiac_sign, 
+            $horoscope2->zodiac_sign
+        );
+        $factors['zodiac'] = $zodiacCompatibility;
+        $score += $zodiacCompatibility * 0.3;
+        
+        // 2. Nakshatra Compatibility (25 points)
+        $nakshatraCompatibility = $this->calculateNakshatraCompatibility(
+            $horoscope1->nakshatra, 
+            $horoscope2->nakshatra
+        );
+        $factors['nakshatra'] = $nakshatraCompatibility;
+        $score += $nakshatraCompatibility * 0.25;
+        
+        // 3. Rashi Compatibility (20 points)
+        $rashiCompatibility = $this->calculateRashiCompatibility(
+            $horoscope1->rashi, 
+            $horoscope2->rashi
+        );
+        $factors['rashi'] = $rashiCompatibility;
+        $score += $rashiCompatibility * 0.2;
+        
+        // 4. Mangal Dosha Compatibility (15 points)
+        $mangalCompatibility = $this->calculateMangalDoshaCompatibility(
+            $horoscope1->mangal_dosha, 
+            $horoscope2->mangal_dosha
+        );
+        $factors['mangal_dosha'] = $mangalCompatibility;
+        $score += $mangalCompatibility * 0.15;
+        
+        // 5. Planetary Positions (10 points)
+        $planetaryCompatibility = $this->calculatePlanetaryCompatibility($horoscope1, $horoscope2);
+        $factors['planetary'] = $planetaryCompatibility;
+        $score += $planetaryCompatibility * 0.1;
+        
+        return [
+            'score' => round($score, 2),
+            'factors' => $factors,
+            'overall_compatibility' => $this->getCompatibilityLevel($score),
+            'recommendations' => $this->getAstrologicalRecommendations($factors)
+        ];
+    }
+    
+    /**
+     * Calculate zodiac sign compatibility
+     */
+    private function calculateZodiacCompatibility(string $sign1, string $sign2): float
+    {
+        $compatibilityMatrix = [
+            'Aries' => ['Leo' => 90, 'Sagittarius' => 85, 'Gemini' => 80, 'Aquarius' => 75, 'Libra' => 70, 'Scorpio' => 65, 'Cancer' => 60, 'Pisces' => 55, 'Taurus' => 50, 'Virgo' => 45, 'Capricorn' => 40],
+            'Taurus' => ['Virgo' => 90, 'Capricorn' => 85, 'Cancer' => 80, 'Pisces' => 75, 'Scorpio' => 70, 'Libra' => 65, 'Gemini' => 60, 'Sagittarius' => 55, 'Aries' => 50, 'Leo' => 45, 'Aquarius' => 40],
+            'Gemini' => ['Libra' => 90, 'Aquarius' => 85, 'Aries' => 80, 'Leo' => 75, 'Sagittarius' => 70, 'Taurus' => 65, 'Cancer' => 60, 'Capricorn' => 55, 'Virgo' => 50, 'Scorpio' => 45, 'Pisces' => 40],
+            'Cancer' => ['Scorpio' => 90, 'Pisces' => 85, 'Taurus' => 80, 'Virgo' => 75, 'Capricorn' => 70, 'Aries' => 65, 'Leo' => 60, 'Sagittarius' => 55, 'Gemini' => 50, 'Libra' => 45, 'Aquarius' => 40],
+            'Leo' => ['Aries' => 90, 'Sagittarius' => 85, 'Gemini' => 80, 'Libra' => 75, 'Aquarius' => 70, 'Taurus' => 65, 'Virgo' => 60, 'Capricorn' => 55, 'Cancer' => 50, 'Scorpio' => 45, 'Pisces' => 40],
+            'Virgo' => ['Taurus' => 90, 'Capricorn' => 85, 'Cancer' => 80, 'Scorpio' => 75, 'Pisces' => 70, 'Aries' => 65, 'Leo' => 60, 'Sagittarius' => 55, 'Gemini' => 50, 'Libra' => 45, 'Aquarius' => 40],
+            'Libra' => ['Gemini' => 90, 'Aquarius' => 85, 'Aries' => 80, 'Leo' => 75, 'Sagittarius' => 70, 'Taurus' => 65, 'Virgo' => 60, 'Capricorn' => 55, 'Cancer' => 50, 'Scorpio' => 45, 'Pisces' => 40],
+            'Scorpio' => ['Cancer' => 90, 'Pisces' => 85, 'Taurus' => 80, 'Virgo' => 75, 'Capricorn' => 70, 'Aries' => 65, 'Leo' => 60, 'Sagittarius' => 55, 'Gemini' => 50, 'Libra' => 45, 'Aquarius' => 40],
+            'Sagittarius' => ['Aries' => 90, 'Leo' => 85, 'Gemini' => 80, 'Libra' => 75, 'Aquarius' => 70, 'Taurus' => 65, 'Virgo' => 60, 'Capricorn' => 55, 'Cancer' => 50, 'Scorpio' => 45, 'Pisces' => 40],
+            'Capricorn' => ['Taurus' => 90, 'Virgo' => 85, 'Cancer' => 80, 'Scorpio' => 75, 'Pisces' => 70, 'Aries' => 65, 'Leo' => 60, 'Sagittarius' => 55, 'Gemini' => 50, 'Libra' => 45, 'Aquarius' => 40],
+            'Aquarius' => ['Gemini' => 90, 'Libra' => 85, 'Aries' => 80, 'Leo' => 75, 'Sagittarius' => 70, 'Taurus' => 65, 'Virgo' => 60, 'Capricorn' => 55, 'Cancer' => 50, 'Scorpio' => 45, 'Pisces' => 40],
+            'Pisces' => ['Cancer' => 90, 'Scorpio' => 85, 'Taurus' => 80, 'Virgo' => 75, 'Capricorn' => 70, 'Aries' => 65, 'Leo' => 60, 'Sagittarius' => 55, 'Gemini' => 50, 'Libra' => 45, 'Aquarius' => 40]
+        ];
+        
+        return $compatibilityMatrix[$sign1][$sign2] ?? 50.0;
+    }
+    
+    /**
+     * Calculate nakshatra compatibility
+     */
+    private function calculateNakshatraCompatibility(string $nakshatra1, string $nakshatra2): float
+    {
+        // Simplified nakshatra compatibility calculation
+        // In a real implementation, this would use detailed nakshatra charts
+        
+        $nakshatraGroups = [
+            'group1' => ['Ashwini', 'Bharani', 'Krittika'],
+            'group2' => ['Rohini', 'Mrigashira', 'Ardra'],
+            'group3' => ['Punarvasu', 'Pushya', 'Ashlesha'],
+            'group4' => ['Magha', 'Purva Phalguni', 'Uttara Phalguni'],
+            'group5' => ['Hasta', 'Chitra', 'Swati'],
+            'group6' => ['Vishakha', 'Anuradha', 'Jyeshtha'],
+            'group7' => ['Mula', 'Purva Ashadha', 'Uttara Ashadha'],
+            'group8' => ['Shravana', 'Dhanishta', 'Shatabhisha'],
+            'group9' => ['Purva Bhadrapada', 'Uttara Bhadrapada', 'Revati']
+        ];
+        
+        $group1 = $this->getNakshatraGroup($nakshatra1, $nakshatraGroups);
+        $group2 = $this->getNakshatraGroup($nakshatra2, $nakshatraGroups);
+        
+        if ($group1 === $group2) {
+            return 85.0; // Same group - good compatibility
+        } elseif (abs($group1 - $group2) === 1 || abs($group1 - $group2) === 8) {
+            return 75.0; // Adjacent groups - moderate compatibility
+        } else {
+            return 60.0; // Other combinations - lower compatibility
+        }
+    }
+    
+    /**
+     * Get nakshatra group number
+     */
+    private function getNakshatraGroup(string $nakshatra, array $groups): int
+    {
+        foreach ($groups as $groupNum => $groupNakshatras) {
+            if (in_array($nakshatra, $groupNakshatras)) {
+                return $groupNum + 1;
+            }
+        }
+        return 1; // Default group
+    }
+    
+    /**
+     * Calculate rashi compatibility
+     */
+    private function calculateRashiCompatibility(string $rashi1, string $rashi2): float
+    {
+        // Simplified rashi compatibility
+        $compatibleRashis = [
+            'Mesha' => ['Simha', 'Dhanu'],
+            'Vrishabha' => ['Kanya', 'Makara'],
+            'Mithuna' => ['Tula', 'Kumbha'],
+            'Karka' => ['Vrishchika', 'Meena'],
+            'Simha' => ['Mesha', 'Dhanu'],
+            'Kanya' => ['Vrishabha', 'Makara'],
+            'Tula' => ['Mithuna', 'Kumbha'],
+            'Vrishchika' => ['Karka', 'Meena'],
+            'Dhanu' => ['Mesha', 'Simha'],
+            'Makara' => ['Vrishabha', 'Kanya'],
+            'Kumbha' => ['Mithuna', 'Tula'],
+            'Meena' => ['Karka', 'Vrishchika']
+        ];
+        
+        if (in_array($rashi2, $compatibleRashis[$rashi1] ?? [])) {
+            return 80.0;
+        } elseif ($rashi1 === $rashi2) {
+            return 70.0;
+        } else {
+            return 50.0;
+        }
+    }
+    
+    /**
+     * Calculate Mangal Dosha compatibility
+     */
+    private function calculateMangalDoshaCompatibility(bool $dosha1, bool $dosha2): float
+    {
+        if (!$dosha1 && !$dosha2) {
+            return 100.0; // No dosha - perfect compatibility
+        } elseif ($dosha1 && $dosha2) {
+            return 85.0; // Both have dosha - good compatibility
+        } else {
+            return 60.0; // One has dosha - moderate compatibility
+        }
+    }
+    
+    /**
+     * Calculate planetary compatibility
+     */
+    private function calculatePlanetaryCompatibility($horoscope1, $horoscope2): float
+    {
+        // Simplified planetary compatibility
+        // In a real implementation, this would analyze planetary positions
+        
+        $score = 70.0; // Base score
+        
+        // Add random variation to simulate planetary analysis
+        $score += rand(-10, 10);
+        
+        return max(0, min(100, $score));
+    }
+    
+    /**
+     * Get compatibility level description
+     */
+    private function getCompatibilityLevel(float $score): string
+    {
+        if ($score >= 85) return 'Excellent';
+        if ($score >= 75) return 'Very Good';
+        if ($score >= 65) return 'Good';
+        if ($score >= 55) return 'Moderate';
+        return 'Low';
+    }
+    
+    /**
+     * Get astrological recommendations
+     */
+    private function getAstrologicalRecommendations(array $factors): array
+    {
+        $recommendations = [];
+        
+        if ($factors['zodiac'] < 60) {
+            $recommendations[] = 'Consider zodiac sign compatibility for better harmony';
+        }
+        
+        if ($factors['nakshatra'] < 60) {
+            $recommendations[] = 'Nakshatra compatibility suggests some challenges';
+        }
+        
+        if ($factors['mangal_dosha'] < 70) {
+            $recommendations[] = 'Mangal Dosha considerations may apply';
+        }
+        
+        if (empty($recommendations)) {
+            $recommendations[] = 'Astrological compatibility looks favorable';
+        }
+        
+        return $recommendations;
     }
 
     /**

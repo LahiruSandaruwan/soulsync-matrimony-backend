@@ -339,8 +339,30 @@ class UserProfile extends Model
      */
     private function getExchangeRate(string $from, string $to): ?float
     {
-        // This would be implemented using the ExchangeRate model
-        return $to === 'LKR' ? 300.0 : 1.0; // Placeholder
+        try {
+            // Use the ExchangeRateService to get real-time rates
+            $exchangeRateService = app(\App\Services\ExchangeRateService::class);
+            return $exchangeRateService->getExchangeRate($from, $to);
+        } catch (\Exception $e) {
+            \Log::error('Failed to get exchange rate', [
+                'from' => $from,
+                'to' => $to,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Fallback to cached rates or default values
+            $fallbackRates = [
+                'USD_LKR' => 300.0,
+                'LKR_USD' => 0.0033,
+                'USD_EUR' => 0.85,
+                'EUR_USD' => 1.18,
+                'USD_GBP' => 0.73,
+                'GBP_USD' => 1.37,
+            ];
+            
+            $key = $from . '_' . $to;
+            return $fallbackRates[$key] ?? 1.0;
+        }
     }
 
     // Scopes

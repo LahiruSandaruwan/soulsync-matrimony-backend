@@ -644,12 +644,105 @@ class SettingsController extends Controller
      */
     private function generatePDFExport($userData, $user)
     {
-        // For now, return JSON - in production, use a PDF library like TCPDF or DomPDF
-        return response()->json([
-            'success' => true,
-            'message' => 'PDF export not yet implemented',
-            'data' => $userData
-        ]);
+        try {
+            // Create new PDF document
+            $pdf = new \TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+            
+            // Set document information
+            $pdf->SetCreator('SoulSync Matrimony');
+            $pdf->SetAuthor('SoulSync System');
+            $pdf->SetTitle('User Data Export - ' . $user->first_name . ' ' . $user->last_name);
+            $pdf->SetSubject('Personal Data Export');
+            
+            // Set default header data
+            $pdf->SetHeaderData('', 0, 'SoulSync Matrimony', 'Personal Data Export', array(0,0,0), array(0,0,0));
+            $pdf->setFooterData(array(0,0,0), array(0,0,0));
+            
+            // Set header and footer fonts
+            $pdf->setHeaderFont(Array(PDF_FONT_NAME_MAIN, '', PDF_FONT_SIZE_MAIN));
+            $pdf->setFooterFont(Array(PDF_FONT_NAME_DATA, '', PDF_FONT_SIZE_DATA));
+            
+            // Set default monospaced font
+            $pdf->SetDefaultMonospacedFont(PDF_FONT_MONOSPACED);
+            
+            // Set margins
+            $pdf->SetMargins(PDF_MARGIN_LEFT, PDF_MARGIN_TOP, PDF_MARGIN_RIGHT);
+            $pdf->SetHeaderMargin(PDF_MARGIN_HEADER);
+            $pdf->SetFooterMargin(PDF_MARGIN_FOOTER);
+            
+            // Set auto page breaks
+            $pdf->SetAutoPageBreak(TRUE, PDF_MARGIN_BOTTOM);
+            
+            // Set image scale factor
+            $pdf->setImageScale(PDF_IMAGE_SCALE_RATIO);
+            
+            // Add a page
+            $pdf->AddPage();
+            
+            // Set font
+            $pdf->SetFont('helvetica', '', 12);
+            
+            // Add content
+            $html = '<h1>Personal Data Export</h1>';
+            $html .= '<h2>User Information</h2>';
+            $html .= '<table border="1" cellpadding="5">';
+            $html .= '<tr><td><strong>Name:</strong></td><td>' . $user->first_name . ' ' . $user->last_name . '</td></tr>';
+            $html .= '<tr><td><strong>Email:</strong></td><td>' . $user->email . '</td></tr>';
+            $html .= '<tr><td><strong>Registration Date:</strong></td><td>' . $user->created_at->format('Y-m-d H:i:s') . '</td></tr>';
+            $html .= '<tr><td><strong>Gender:</strong></td><td>' . $user->gender . '</td></tr>';
+            $html .= '<tr><td><strong>Date of Birth:</strong></td><td>' . $user->date_of_birth . '</td></tr>';
+            $html .= '</table>';
+            
+            $html .= '<h2>Profile Statistics</h2>';
+            $html .= '<table border="1" cellpadding="5">';
+            $html .= '<tr><td><strong>Total Matches:</strong></td><td>' . count($userData['matches']) . '</td></tr>';
+            $html .= '<tr><td><strong>Total Messages:</strong></td><td>' . count($userData['messages']) . '</td></tr>';
+            $html .= '<tr><td><strong>Total Photos:</strong></td><td>' . count($userData['photos']) . '</td></tr>';
+            $html .= '<tr><td><strong>Profile Completion:</strong></td><td>' . $this->calculateProfileCompletion($user) . '%</td></tr>';
+            $html .= '</table>';
+            
+            if (!empty($userData['matches'])) {
+                $html .= '<h2>Recent Matches</h2>';
+                $html .= '<table border="1" cellpadding="5">';
+                $html .= '<tr><th>Name</th><th>Match Date</th><th>Compatibility</th></tr>';
+                foreach (array_slice($userData['matches'], 0, 10) as $match) {
+                    $html .= '<tr><td>' . $match['name'] . '</td><td>' . $match['created_at'] . '</td><td>' . $match['compatibility_score'] . '%</td></tr>';
+                }
+                $html .= '</table>';
+            }
+            
+            if (!empty($userData['messages'])) {
+                $html .= '<h2>Recent Messages</h2>';
+                $html .= '<table border="1" cellpadding="5">';
+                $html .= '<tr><th>Conversation</th><th>Message</th><th>Date</th></tr>';
+                foreach (array_slice($userData['messages'], 0, 10) as $message) {
+                    $html .= '<tr><td>' . $message['conversation_id'] . '</td><td>' . substr($message['content'], 0, 50) . '...</td><td>' . $message['created_at'] . '</td></tr>';
+                }
+                $html .= '</table>';
+            }
+            
+            // Print text using writeHTMLCell()
+            $pdf->writeHTML($html, true, false, true, false, '');
+            
+            // Close and output PDF document
+            $pdfContent = $pdf->Output('soulsync_data_export.pdf', 'S');
+            
+            return response($pdfContent)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'attachment; filename="soulsync_data_export.pdf"');
+                
+        } catch (\Exception $e) {
+            \Log::error('PDF generation failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate PDF export',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
