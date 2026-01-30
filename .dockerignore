@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Development
+.env
+.env.*
+!.env.example
+.phpunit.result.cache
+phpunit.xml
+.editorconfig
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Dependencies (will be installed in build)
+vendor
+
+# Storage (mounted as volume)
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+!storage/logs/.gitkeep
+!storage/framework/cache/.gitkeep
+!storage/framework/sessions/.gitkeep
+!storage/framework/views/.gitkeep
+
+# Tests
+tests
+*.test.php
+*.spec.php
+
+# Documentation
+*.md
+!README.md
+docs
+
+# Build artifacts
+node_modules
+public/hot
+public/storage
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+docker
+
+# Misc
+.DS_Store
+Thumbs.db

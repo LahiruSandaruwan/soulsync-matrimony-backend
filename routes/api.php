@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\VideoCallController;
 use App\Models\User;
 use App\Http\Controllers\Api\EmailVerificationController;
 use App\Http\Controllers\Api\PublicConfigController;
+use App\Http\Controllers\Api\HealthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -48,7 +49,7 @@ Route::model('user', User::class);
 
 // Public routes (no authentication required)
 Route::prefix('v1')->group(function () {
-    
+
     // Authentication routes with rate limiting
     Route::prefix('auth')->group(function () {
         Route::post('register', [AuthController::class, 'register'])->middleware('auth.rate.limit:register');
@@ -57,7 +58,7 @@ Route::prefix('v1')->group(function () {
         Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('auth.rate.limit:forgot-password');
         Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('auth.rate.limit:reset-password');
     });
-    
+
     // Public data routes (for browsing without login)
     Route::prefix('public')->group(function () {
         Route::get('config', [PublicConfigController::class, 'index']);
@@ -67,19 +68,15 @@ Route::prefix('v1')->group(function () {
         Route::get('cities/{state}', [LocationController::class, 'cities']);
         Route::get('subscription-plans', [SubscriptionController::class, 'plans']);
     });
-    
+
     // Public subscription plans route
     Route::get('subscription/plans', [SubscriptionController::class, 'plans']);
-    
-    // Health check
-    Route::get('health', function () {
-        return response()->json([
-            'status' => 'ok',
-            'message' => 'SoulSync API is running',
-            'version' => '1.0.0',
-            'timestamp' => now()
-        ]);
-    });
+
+    // Health check endpoints
+    Route::get('health', [HealthController::class, 'check']);
+    Route::get('health/ping', [HealthController::class, 'ping']);
+    Route::get('health/ready', [HealthController::class, 'ready']);
+    Route::get('health/live', [HealthController::class, 'live']);
 });
 
 // Email verification routes

@@ -24,17 +24,11 @@ class RegisterRequest extends FormRequest
             'first_name' => ['required', 'string', 'min:2', 'max:50', 'regex:/^[a-zA-Z\s]+$/'],
             'last_name' => ['required', 'string', 'min:2', 'max:50', 'regex:/^[a-zA-Z\s]+$/'],
             'email' => ['required', 'email:rfc,dns', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'confirmed', Password::min(8)
-                ->letters()
-                ->mixedCase()
-                ->numbers()
-                ->symbols()
-                ->uncompromised()
-            ],
+            'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
             'date_of_birth' => ['required', 'date', 'before:' . now()->subYears(18)->format('Y-m-d'), 'after:' . now()->subYears(80)->format('Y-m-d')],
             'gender' => ['required', 'in:male,female,other'],
             'phone' => ['sometimes', 'string', 'min:10', 'max:15', 'regex:/^[\+]?[1-9][\d]{0,15}$/'],
-            'country_code' => ['required', 'string', 'size:2', 'exists:countries,code'],
+            'country_code' => ['sometimes', 'string', 'max:5'],
             'language' => ['sometimes', 'string', 'in:en,si,ta'],
             'terms_accepted' => ['required', 'boolean', 'accepted'],
             'privacy_accepted' => ['required', 'boolean', 'accepted'],
