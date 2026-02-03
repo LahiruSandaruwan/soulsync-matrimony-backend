@@ -16,6 +16,7 @@
         "pusher/pusher-php-server": "^7.2",
         "sentry/sentry-laravel": "^4.20",
         "spatie/laravel-permission": "^6.20",
+        "stevebauman/location": "^7.6",
         "stripe/stripe-php": "^17.4"
     },
     "require-dev": {

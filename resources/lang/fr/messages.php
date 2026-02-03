@@ -1,0 +1,27 @@
+<?php
+
+return [
+    'welcome' => '[FR] Welcome to SoulSync',
+    'find_your_match' => '[FR] Find Your Perfect Match',
+    'login' => '[FR] Login',
+    'register' => '[FR] Register',
+    'profile' => '[FR] Profile',
+    'matches' => '[FR] Matches',
+    'messages' => '[FR] Messages',
+    'search' => '[FR] Search',
+    'preferences' => '[FR] Preferences',
+    'subscription' => '[FR] Subscription',
+    'settings' => '[FR] Settings',
+    'logout' => '[FR] Logout',
+    'save' => '[FR] Save',
+    'cancel' => '[FR] Cancel',
+    'edit' => '[FR] Edit',
+    'delete' => '[FR] Delete',
+    'success' => '[FR] Success',
+    'error' => '[FR] Error',
+    'loading' => '[FR] Loading...',
+    'no_data' => '[FR] No data available',
+    'coming_soon' => '[FR] Coming Soon',
+    'premium_feature' => '[FR] Premium Feature',
+    'upgrade_now' => '[FR] Upgrade Now',
+];

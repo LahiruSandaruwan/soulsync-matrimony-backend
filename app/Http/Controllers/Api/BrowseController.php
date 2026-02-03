@@ -270,6 +270,109 @@ class BrowseController extends Controller
     }
 
     /**
+     * Get live/recently active profiles (public endpoint)
+     * Uses multi-tier fallback to always return at least 5 profiles:
+     * Tier 1: Active in last 24 hours
+     * Tier 2: Active in last 7 days (if need more)
+     * Tier 3: Recently joined (if need more)
+     * Tier 4: Any approved profiles (final fallback)
+     */
+    public function liveProfiles(Request $request): JsonResponse
+    {
+        try {
+            $limit = min((int) $request->get('limit', 5), 10);
+            $profiles = collect();
+
+            // Tier 1: Users active in last 24 hours (truly "live")
+            $tier1 = User::with(['profile', 'photos' => function($q) {
+                $q->where('is_profile_picture', true)->orWhere('sort_order', 1);
+            }])
+            ->whereHas('profile')
+            ->where('status', 'active')
+            ->where('profile_status', 'approved')
+            ->where('last_active_at', '>=', now()->subHours(24))
+            ->orderBy('last_active_at', 'desc')
+            ->limit($limit)
+            ->get();
+            $profiles = $profiles->merge($tier1);
+
+            // Tier 2: Users active in last 7 days (if need more)
+            if ($profiles->count() < $limit) {
+                $remaining = $limit - $profiles->count();
+                $tier2 = User::with(['profile', 'photos' => function($q) {
+                    $q->where('is_profile_picture', true)->orWhere('sort_order', 1);
+                }])
+                ->whereHas('profile')
+                ->where('status', 'active')
+                ->where('profile_status', 'approved')
+                ->where('last_active_at', '>=', now()->subDays(7))
+                ->where('last_active_at', '<', now()->subHours(24))
+                ->whereNotIn('id', $profiles->pluck('id'))
+                ->orderBy('last_active_at', 'desc')
+                ->limit($remaining)
+                ->get();
+                $profiles = $profiles->merge($tier2);
+            }
+
+            // Tier 3: Recently joined users (if need more)
+            if ($profiles->count() < $limit) {
+                $remaining = $limit - $profiles->count();
+                $tier3 = User::with(['profile', 'photos' => function($q) {
+                    $q->where('is_profile_picture', true)->orWhere('sort_order', 1);
+                }])
+                ->whereHas('profile')
+                ->where('status', 'active')
+                ->where('profile_status', 'approved')
+                ->whereNotIn('id', $profiles->pluck('id'))
+                ->orderBy('created_at', 'desc')
+                ->limit($remaining)
+                ->get();
+                $profiles = $profiles->merge($tier3);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $profiles->map(fn($user) => $this->formatLiveProfile($user))
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get live profiles',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Format profile for live profiles response (simplified format)
+     */
+    private function formatLiveProfile($user): array
+    {
+        $profile = $user->profile;
+        $photo = $user->photos->first();
+
+        // Calculate age from date_of_birth
+        $age = null;
+        if ($user->date_of_birth) {
+            $age = \Carbon\Carbon::parse($user->date_of_birth)->age;
+        }
+
+        return [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'age' => $age,
+            'city' => $profile?->current_city,
+            'country' => $profile?->current_country,
+            'height_cm' => $profile?->height_cm,
+            'occupation' => $profile?->occupation,
+            'religion' => $profile?->religion,
+            'photo_url' => $photo?->file_path,
+            'is_online' => $user->last_active_at && $user->last_active_at->gt(now()->subMinutes(15)),
+        ];
+    }
+
+    /**
      * Browse verified profiles
      */
     public function verifiedProfiles(Request $request): JsonResponse

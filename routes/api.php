@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\Admin\PhotoController as AdminPhotoController;
 use App\Http\Controllers\Api\Admin\ReportController;
 use App\Http\Controllers\Api\Admin\ContentController;
 use App\Http\Controllers\Api\Admin\SettingsController as AdminSettingsController;
+use App\Http\Controllers\Api\Admin\CountryPricingController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\VideoCallController;
 use App\Models\User;
@@ -69,14 +70,22 @@ Route::prefix('v1')->group(function () {
         Route::get('subscription-plans', [SubscriptionController::class, 'plans']);
     });
 
-    // Public subscription plans route
-    Route::get('subscription/plans', [SubscriptionController::class, 'plans']);
+    // Public subscription routes (country-based pricing)
+    Route::prefix('subscription')->group(function () {
+        Route::get('plans', [SubscriptionController::class, 'plans']);
+        Route::get('countries', [SubscriptionController::class, 'supportedCountries']);
+        Route::get('detect-location', [SubscriptionController::class, 'detectLocation']);
+        Route::post('calculate-price', [SubscriptionController::class, 'calculatePrice']);
+    });
 
     // Health check endpoints
     Route::get('health', [HealthController::class, 'check']);
     Route::get('health/ping', [HealthController::class, 'ping']);
     Route::get('health/ready', [HealthController::class, 'ready']);
     Route::get('health/live', [HealthController::class, 'live']);
+
+    // Browse live profiles (public - no auth required)
+    Route::get('browse/live', [BrowseController::class, 'liveProfiles']);
 });
 
 // Email verification routes
@@ -218,6 +227,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('plans', [SubscriptionController::class, 'plans']);
         Route::get('status', [SubscriptionController::class, 'current']);
         Route::get('features', [SubscriptionController::class, 'features']);
+        Route::get('countries', [SubscriptionController::class, 'supportedCountries']);
+        Route::get('detect-location', [SubscriptionController::class, 'detectLocation']);
+        Route::post('calculate-price', [SubscriptionController::class, 'calculatePrice']);
         Route::post('subscribe', [SubscriptionController::class, 'subscribe']);
         Route::post('cancel', [SubscriptionController::class, 'cancel']);
         Route::post('reactivate', [SubscriptionController::class, 'reactivate']);
@@ -345,9 +357,20 @@ Route::prefix('v1/admin')->middleware(['auth:sanctum', 'admin'])->group(function
     
     // System health
     Route::get('system/health', [AdminSettingsController::class, 'systemHealth']);
-    
+
     // Revenue analytics
     Route::get('revenue/analytics', [AdminSettingsController::class, 'revenueAnalytics']);
+
+    // Country pricing management
+    Route::prefix('pricing')->group(function () {
+        Route::get('countries', [CountryPricingController::class, 'index']);
+        Route::get('countries/{countryCode}', [CountryPricingController::class, 'show']);
+        Route::post('countries', [CountryPricingController::class, 'store']);
+        Route::put('countries/{countryCode}', [CountryPricingController::class, 'update']);
+        Route::delete('countries/{countryCode}', [CountryPricingController::class, 'destroy']);
+        Route::post('bulk-update', [CountryPricingController::class, 'bulkUpdate']);
+        Route::post('adjust-prices', [CountryPricingController::class, 'adjustPrices']);
+    });
 });
 
 // Webhook routes (no authentication required)

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\GeolocationService;
+use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -14,6 +16,10 @@ use Carbon\Carbon;
 
 class SubscriptionController extends Controller
 {
+    public function __construct(
+        private GeolocationService $geolocationService,
+        private PricingService $pricingService
+    ) {}
     /**
      * Get current user's subscription
      */
@@ -61,92 +67,139 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Get available subscription plans
+     * Get available subscription plans (with country-based pricing)
      */
     public function plans(Request $request): JsonResponse
     {
-        $userCountry = $request->user() ? $request->user()->country_code : 'US';
-        $isLocalUser = in_array($userCountry, ['LK']); // Sri Lankan users
-        
-        // Cache plans for 1 hour based on user country
-        $cacheKey = "subscription_plans_{$userCountry}";
-        
-        $plans = Cache::remember($cacheKey, 3600, function () use ($isLocalUser) {
-            return [
-                'free' => [
-                    'name' => 'Free',
-                    'price_usd' => 0,
-                    'price_local' => $isLocalUser ? 0 : 0,
-                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                    'duration_days' => null,
-                    'features' => $this->getFreeFeatures(),
-                    'limits' => [
-                        'daily_likes' => 5,
-                        'daily_matches' => 5,
-                        'super_likes' => 0,
-                        'profile_views' => false,
-                        'advanced_search' => false,
-                    ]
-                ],
-                'basic' => [
-                    'name' => 'Basic',
-                    'price_usd' => 4.99,
-                    'price_local' => $isLocalUser ? 1500 : 4.99, // ~1500 LKR
-                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                    'duration_days' => 30,
-                    'popular' => false,
-                    'features' => $this->getBasicFeatures(),
-                    'limits' => [
-                        'daily_likes' => 25,
-                        'daily_matches' => 25,
-                        'super_likes' => 3,
-                        'profile_views' => true,
-                        'advanced_search' => true,
-                    ]
-                ],
-                'premium' => [
-                    'name' => 'Premium',
-                    'price_usd' => 9.99,
-                    'price_local' => $isLocalUser ? 3000 : 9.99, // ~3000 LKR
-                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                    'duration_days' => 30,
-                    'popular' => true,
-                    'features' => $this->getPremiumFeatures('premium'),
-                    'limits' => [
-                        'daily_likes' => 100,
-                        'daily_matches' => 100,
-                        'super_likes' => 10,
-                        'profile_views' => true,
-                        'advanced_search' => true,
-                    ]
-                ],
-                'platinum' => [
-                    'name' => 'Platinum',
-                    'price_usd' => 19.99,
-                    'price_local' => $isLocalUser ? 6000 : 19.99, // ~6000 LKR
-                    'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                    'duration_days' => 30,
-                    'popular' => false,
-                    'features' => $this->getPlatinumFeatures(),
-                    'limits' => [
-                        'daily_likes' => 'unlimited',
-                        'daily_matches' => 'unlimited',
-                        'super_likes' => 25,
-                        'profile_views' => true,
-                        'advanced_search' => true,
-                    ]
-                ]
-            ];
-        });
+        // Determine user's country
+        // Priority: 1. Query param, 2. User profile, 3. IP detection
+        $countryCode = $request->query('country');
+
+        if (!$countryCode && $request->user()) {
+            $countryCode = $request->user()->country_code;
+        }
+
+        if (!$countryCode) {
+            $location = $this->geolocationService->detectCountry();
+            $countryCode = $location['country_code'];
+        }
+
+        $countryCode = strtoupper($countryCode ?? 'US');
+
+        // Get plans from PricingService
+        $pricingData = $this->pricingService->getPlansForCountry($countryCode);
+
+        // Add plan limits to each plan
+        $limits = [
+            'free' => [
+                'daily_likes' => 5,
+                'daily_matches' => 5,
+                'super_likes' => 0,
+                'profile_views' => false,
+                'advanced_search' => false,
+            ],
+            'basic' => [
+                'daily_likes' => 25,
+                'daily_matches' => 25,
+                'super_likes' => 3,
+                'profile_views' => true,
+                'advanced_search' => true,
+            ],
+            'premium' => [
+                'daily_likes' => 100,
+                'daily_matches' => 100,
+                'super_likes' => 10,
+                'profile_views' => true,
+                'advanced_search' => true,
+            ],
+            'platinum' => [
+                'daily_likes' => 'unlimited',
+                'daily_matches' => 'unlimited',
+                'super_likes' => 25,
+                'profile_views' => true,
+                'advanced_search' => true,
+            ],
+        ];
+
+        foreach ($pricingData['plans'] as $planId => &$plan) {
+            $plan['limits'] = $limits[$planId] ?? [];
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $pricingData,
+        ]);
+    }
+
+    /**
+     * Get user's detected location
+     */
+    public function detectLocation(Request $request): JsonResponse
+    {
+        $location = $this->geolocationService->detectCountry();
+
+        // If user is authenticated and has country set, include that info
+        if ($request->user() && $request->user()->country_code) {
+            $location['user_country'] = $request->user()->country_code;
+            $location['user_currency'] = $this->geolocationService->getCurrencyForCountry($request->user()->country_code);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $location,
+        ]);
+    }
+
+    /**
+     * Get supported countries for pricing
+     */
+    public function supportedCountries(): JsonResponse
+    {
+        $countries = $this->pricingService->getSupportedCountries();
 
         return response()->json([
             'success' => true,
             'data' => [
-                'plans' => $plans,
-                'user_country' => $userCountry,
-                'local_currency' => $isLocalUser ? 'LKR' : 'USD',
-                'payment_methods' => $this->getAvailablePaymentMethods($userCountry),
-            ]
+                'countries' => $countries,
+                'total' => count($countries),
+            ],
+        ]);
+    }
+
+    /**
+     * Calculate price for a specific plan/duration/country
+     */
+    public function calculatePrice(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'plan' => 'required|string|in:basic,premium,platinum',
+            'duration' => 'required|string|in:monthly,quarterly,yearly',
+            'country' => 'nullable|string|size:2',
+            'discount_code' => 'nullable|string|max:50',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $countryCode = $request->country
+            ?? ($request->user() ? $request->user()->country_code : null)
+            ?? $this->geolocationService->detectCountry()['country_code'];
+
+        $priceData = $this->pricingService->calculatePrice(
+            $request->plan,
+            $request->duration,
+            $countryCode,
+            $request->discount_code
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $priceData,
         ]);
     }
 

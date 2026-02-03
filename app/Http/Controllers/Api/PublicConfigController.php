@@ -73,7 +73,7 @@ class PublicConfigController extends Controller
             'api_version' => 'v1',
             'timezone' => config('app.timezone', 'UTC'),
             'locale' => config('app.locale', 'en'),
-            'supported_locales' => ['en', 'si', 'ta'],
+            'supported_locales' => ['en', 'si', 'ta', 'fr', 'de', 'es'],
         ];
     }
 
