@@ -22,19 +22,36 @@ class DashboardController extends Controller
     public function index(): JsonResponse
     {
         try {
-            // For now, just return a basic response to test the endpoint
+            $userStats = $this->getUserStats();
+            $activityStats = $this->getActivityStats();
+            $revenueStats = $this->getRevenueStats();
+            $moderationStats = $this->getModerationStats();
+            $growthStats = $this->getGrowthStats();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Admin dashboard accessed successfully',
                 'data' => [
-                    'total_users' => 0,
-                    'active_users' => 0,
-                    'premium_users' => 0,
-                    'total_matches' => 0,
-                    'total_conversations' => 0,
-                    'total_messages' => 0,
-                    'pending_reports' => 0,
-                    'pending_photos' => 0
+                    'total_users' => $userStats['total'],
+                    'active_users' => $userStats['active'],
+                    'premium_users' => $userStats['premium'],
+                    'new_users_today' => $userStats['new_today'],
+                    'new_users_this_week' => $userStats['new_this_week'],
+                    'new_users_this_month' => $userStats['new_this_month'],
+                    'total_matches' => $activityStats['successful_matches'],
+                    'total_interactions' => $activityStats['total_interactions'],
+                    'total_messages' => $activityStats['total_messages'],
+                    'daily_active_users' => $activityStats['daily_active_users'],
+                    'weekly_active_users' => $activityStats['weekly_active_users'],
+                    'pending_reports' => $moderationStats['pending_reports'],
+                    'pending_photos' => $moderationStats['pending_photos'],
+                    'pending_profiles' => $moderationStats['pending_profiles'],
+                    'total_revenue' => $revenueStats['total_revenue'],
+                    'monthly_revenue' => $revenueStats['monthly_revenue'],
+                    'conversion_rate' => $revenueStats['conversion_rate'],
+                    'user_growth_rate' => $growthStats['user_growth_rate'],
+                    'revenue_growth_rate' => $growthStats['revenue_growth_rate'],
+                    'gender_distribution' => $userStats['gender_distribution'],
                 ]
             ]);
         } catch (\Exception $e) {
@@ -51,23 +68,45 @@ class DashboardController extends Controller
     public function stats(Request $request): JsonResponse
     {
         try {
-            // For now, just return a basic response to test the endpoint
+            $period = $request->get('period', 30); // Default 30 days
+            $startDate = now()->subDays($period);
+
+            $userStats = $this->getUserStats();
+            $activityStats = $this->getActivityStats();
+            $revenueStats = $this->getRevenueStats();
+            $moderationStats = $this->getModerationStats();
+            $growthStats = $this->getGrowthStats();
+            $recentActivity = $this->getRecentActivity();
+            $dailyStats = $this->getDailyStats($startDate);
+            $userDistribution = $this->getUserDistribution();
+            $revenueBreakdown = $this->getRevenueBreakdown();
+            $topMetrics = $this->getTopMetrics();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Admin stats accessed successfully',
                 'data' => [
                     'overview' => [
-                        'total_users' => 0,
-                        'active_users' => 0,
-                        'premium_users' => 0,
-                        'total_matches' => 0,
-                        'total_messages' => 0,
-                        'total_revenue' => 0,
+                        'total_users' => $userStats['total'],
+                        'active_users' => $userStats['active'],
+                        'premium_users' => $userStats['premium'],
+                        'premium_percentage' => $userStats['premium_percentage'],
+                        'total_matches' => $activityStats['successful_matches'],
+                        'total_messages' => $activityStats['total_messages'],
+                        'total_revenue' => $revenueStats['total_revenue'],
+                        'monthly_revenue' => $revenueStats['monthly_revenue'],
+                        'conversion_rate' => $revenueStats['conversion_rate'],
                     ],
-                    'daily_stats' => [],
-                    'user_distribution' => [],
-                    'revenue_breakdown' => [],
-                    'top_metrics' => [],
+                    'users' => $userStats,
+                    'activity' => $activityStats,
+                    'revenue' => $revenueStats,
+                    'moderation' => $moderationStats,
+                    'growth' => $growthStats,
+                    'recent_activity' => $recentActivity,
+                    'daily_stats' => $dailyStats,
+                    'user_distribution' => $userDistribution,
+                    'revenue_breakdown' => $revenueBreakdown,
+                    'top_metrics' => $topMetrics,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -120,7 +159,11 @@ class DashboardController extends Controller
     private function getActivityStats(): array
     {
         $totalMatches = UserMatch::count();
-        $successfulMatches = UserMatch::whereNotNull('matched_at')->count();
+        // Successful/mutual matches are those with status 'mutual' or where both users have liked
+        $successfulMatches = UserMatch::where('status', 'mutual')
+            ->orWhere(function ($q) {
+                $q->where('user_action', 'like')->where('matched_user_action', 'like');
+            })->count();
         $totalMessages = Message::count();
         $dailyActiveUsers = User::where('last_active_at', '>=', now()->subDay())->count();
         $weeklyActiveUsers = User::where('last_active_at', '>=', now()->subWeek())->count();
@@ -188,9 +231,9 @@ class DashboardController extends Controller
             'pending_profiles' => $pendingProfiles,
             'total_pending' => $pendingReports + $pendingPhotos + $pendingProfiles,
             'recent_reports' => Report::where('created_at', '>=', now()->subWeek())
-                ->selectRaw('reason, count(*) as count')
-                ->groupBy('reason')
-                ->pluck('count', 'reason')
+                ->selectRaw('type, count(*) as count')
+                ->groupBy('type')
+                ->pluck('count', 'type')
                 ->toArray(),
         ];
     }
@@ -239,15 +282,20 @@ class DashboardController extends Controller
                 ->get(['id', 'first_name', 'last_name', 'created_at'])
                 ->toArray(),
             'recent_matches' => UserMatch::with(['user:id,first_name', 'targetUser:id,first_name'])
-                ->whereNotNull('matched_at')
-                ->latest('matched_at')
+                ->where(function ($q) {
+                    $q->where('status', 'mutual')
+                      ->orWhere(function ($q2) {
+                          $q2->where('user_action', 'like')->where('matched_user_action', 'like');
+                      });
+                })
+                ->latest('updated_at')
                 ->limit(5)
                 ->get()
                 ->map(function ($match) {
                     return [
-                        'user1' => $match->user->first_name,
-                        'user2' => $match->targetUser->first_name,
-                        'matched_at' => $match->matched_at,
+                        'user1' => $match->user->first_name ?? 'Unknown',
+                        'user2' => $match->targetUser->first_name ?? 'Unknown',
+                        'matched_at' => $match->updated_at,
                     ];
                 })
                 ->toArray(),
@@ -257,9 +305,9 @@ class DashboardController extends Controller
                 ->get()
                 ->map(function ($report) {
                     return [
-                        'reporter' => $report->reporter->first_name,
-                        'reported_user' => $report->reportedUser->first_name,
-                        'reason' => $report->reason,
+                        'reporter' => $report->reporter->first_name ?? 'Unknown',
+                        'reported_user' => $report->reportedUser->first_name ?? 'Unknown',
+                        'reason' => $report->type,
                         'created_at' => $report->created_at,
                     ];
                 })
@@ -279,9 +327,14 @@ class DashboardController extends Controller
             ->pluck('count', 'date')
             ->toArray();
 
-        $dailyMatches = UserMatch::where('matched_at', '>=', $startDate)
-            ->whereNotNull('matched_at')
-            ->selectRaw('DATE(matched_at) as date, count(*) as count')
+        $dailyMatches = UserMatch::where('updated_at', '>=', $startDate)
+            ->where(function ($q) {
+                $q->where('status', 'mutual')
+                  ->orWhere(function ($q2) {
+                      $q2->where('user_action', 'like')->where('matched_user_action', 'like');
+                  });
+            })
+            ->selectRaw('DATE(updated_at) as date, count(*) as count')
             ->groupBy('date')
             ->orderBy('date')
             ->pluck('count', 'date')
@@ -380,12 +433,15 @@ class DashboardController extends Controller
                 ->limit(10)
                 ->get()
                 ->toArray(),
-            'successful_matchers' => User::withCount(['matches' => function ($query) {
-                $query->whereNotNull('matched_at');
+            'successful_matchers' => User::withCount(['sentMatches as matches_count' => function ($query) {
+                $query->where('status', 'mutual')
+                      ->orWhere(function ($q) {
+                          $q->where('user_action', 'like')->where('matched_user_action', 'like');
+                      });
             }])
                 ->orderBy('matches_count', 'desc')
                 ->limit(10)
-                ->get(['id', 'first_name', 'last_name', 'matches_count'])
+                ->get(['id', 'first_name', 'last_name'])
                 ->toArray(),
         ];
     }
