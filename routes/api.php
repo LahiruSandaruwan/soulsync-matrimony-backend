@@ -86,8 +86,9 @@ Route::prefix('v1')->group(function () {
     Route::get('health/ready', [HealthController::class, 'ready']);
     Route::get('health/live', [HealthController::class, 'live']);
 
-    // Browse live profiles (public - no auth required)
+    // Browse profiles (public - no auth required)
     Route::get('browse/live', [BrowseController::class, 'liveProfiles']);
+    Route::get('browse/recent', [BrowseController::class, 'recentProfiles']);
 
     // Success Stories (public - no auth required)
     Route::prefix('success-stories')->group(function () {
@@ -191,7 +192,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::prefix('browse')->group(function () {
         Route::get('/', [BrowseController::class, 'index']);
         Route::get('premium', [BrowseController::class, 'premiumProfiles']);
-        Route::get('recent', [BrowseController::class, 'recentlyJoined']);
+        Route::get('recently-joined', [BrowseController::class, 'recentlyJoined']);
         Route::get('verified', [BrowseController::class, 'verifiedProfiles']);
     });
     

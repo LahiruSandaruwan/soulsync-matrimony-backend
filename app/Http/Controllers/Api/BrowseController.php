@@ -345,6 +345,71 @@ class BrowseController extends Controller
     }
 
     /**
+     * Get recently joined profiles (public endpoint)
+     * Returns newest members ordered by registration date
+     */
+    public function recentProfiles(Request $request): JsonResponse
+    {
+        try {
+            $limit = min((int) $request->get('limit', 6), 12);
+
+            $profiles = User::with(['profile', 'photos' => function($q) {
+                $q->where('is_profile_picture', true)->orWhere('sort_order', 1);
+            }])
+            ->whereHas('profile')
+            ->where('status', 'active')
+            ->where('profile_status', 'approved')
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $profiles->map(fn($user) => $this->formatRecentProfile($user))
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get recent profiles',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Format profile for recent profiles response (with "new" badge info)
+     */
+    private function formatRecentProfile($user): array
+    {
+        $profile = $user->profile;
+        $photo = $user->photos->first();
+
+        // Calculate age from date_of_birth
+        $age = null;
+        if ($user->date_of_birth) {
+            $age = \Carbon\Carbon::parse($user->date_of_birth)->age;
+        }
+
+        // Check if user joined in last 7 days
+        $isNew = $user->created_at && $user->created_at->gt(now()->subDays(7));
+
+        return [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'age' => $age,
+            'city' => $profile?->current_city,
+            'country' => $profile?->current_country,
+            'height_cm' => $profile?->height_cm,
+            'occupation' => $profile?->occupation,
+            'religion' => $profile?->religion,
+            'photo_url' => $photo?->file_path,
+            'is_new' => $isNew,
+            'joined_at' => $user->created_at?->toISOString(),
+        ];
+    }
+
+    /**
      * Format profile for live profiles response (simplified format)
      */
     private function formatLiveProfile($user): array
