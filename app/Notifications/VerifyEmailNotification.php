@@ -41,12 +41,11 @@ class VerifyEmailNotification extends Notification implements ShouldQueue
 
         return (new MailMessage)
             ->subject('Verify Your Email Address - ' . config('app.name'))
-            ->greeting('Hello ' . $notifiable->first_name . '!')
-            ->line('Thank you for registering with ' . config('app.name') . '. Please verify your email address to complete your registration.')
-            ->action('Verify Email Address', $verificationUrl)
-            ->line('This verification link will expire in 60 minutes.')
-            ->line('If you did not create an account, no further action is required.')
-            ->salutation('Best regards, ' . config('app.name') . ' Team');
+            ->view('emails.verify-email', [
+                'user' => $notifiable,
+                'verificationUrl' => $verificationUrl,
+                'expiresIn' => Config::get('auth.verification.expire', 60) . ' minutes',
+            ]);
     }
 
     /**

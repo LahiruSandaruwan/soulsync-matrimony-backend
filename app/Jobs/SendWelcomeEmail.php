@@ -59,12 +59,15 @@ class SendWelcomeEmail implements ShouldQueue
      */
     private function sendWelcomeEmail(): void
     {
+        $frontendUrl = config('app.frontend_url', config('app.url'));
+
         $data = [
             'user' => $this->user,
             'app_name' => config('app.name'),
-            'frontend_url' => config('app.frontend_url', config('app.url')),
-            'login_url' => config('app.frontend_url', config('app.url')) . '/login',
-            'profile_url' => config('app.frontend_url', config('app.url')) . '/profile',
+            'frontend_url' => $frontendUrl,
+            'login_url' => $frontendUrl . '/login',
+            'profile_url' => $frontendUrl . '/app/profile',
+            'completeProfileUrl' => $frontendUrl . '/app/profile/edit',
             'next_steps' => $this->getNextSteps(),
         ];
 

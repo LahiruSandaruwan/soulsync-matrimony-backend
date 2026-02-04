@@ -360,6 +360,8 @@ class UserController extends Controller
         }
 
         try {
+            $previousStatus = $user->profile_status;
+
             $user->update([
                 'profile_status' => $request->profile_status,
                 'profile_status_changed_at' => now(),
@@ -374,6 +376,13 @@ class UserController extends Controller
                 'changed_by' => $request->user()->id,
                 'reason' => $request->get('reason'),
             ]);
+
+            // Send notification to user about profile status change
+            if ($request->profile_status === 'approved' && $previousStatus !== 'approved') {
+                $user->notify(new \App\Notifications\ProfileApprovedNotification());
+            } elseif ($request->profile_status === 'rejected') {
+                $user->notify(new \App\Notifications\ProfileRejectedNotification($request->get('reason')));
+            }
 
             return response()->json([
                 'success' => true,

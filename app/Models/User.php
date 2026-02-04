@@ -152,7 +152,7 @@ class User extends Authenticatable implements MustVerifyEmail, \Illuminate\Contr
      */
     public function sendPasswordResetNotification($token)
     {
-        $this->notify(new \Illuminate\Auth\Notifications\ResetPassword($token));
+        $this->notify(new \App\Notifications\PasswordResetNotification($token));
     }
 
     /**

@@ -250,16 +250,19 @@ class SendMatchNotification implements ShouldQueue
      */
     private function sendNewMatchEmail(): void
     {
+        // Load matched user with profile and photos for the template
+        $this->matchedUser->load(['profile', 'photos']);
+
         $data = [
             'user' => $this->user,
-            'matched_user' => $this->matchedUser,
-            'compatibility_score' => $this->metadata['compatibility_score'] ?? null,
-            'view_match_url' => config('app.frontend_url') . '/matches/' . $this->matchedUser->id,
+            'matchedUser' => $this->matchedUser,
+            'compatibilityScore' => $this->metadata['compatibility_score'] ?? null,
+            'matchUrl' => config('app.frontend_url') . '/app/matches',
         ];
 
-        Mail::send('emails.new-match', $data, function ($message) {
+        Mail::send('emails.match.new-match', $data, function ($message) {
             $message->to($this->user->email, $this->user->full_name)
-                   ->subject('New Match Found on ' . config('app.name'));
+                   ->subject('Someone is Interested in You! - ' . config('app.name'));
         });
     }
 
@@ -268,15 +271,18 @@ class SendMatchNotification implements ShouldQueue
      */
     private function sendMutualMatchEmail(): void
     {
+        // Load matched user with profile and photos for the template
+        $this->matchedUser->load(['profile', 'photos']);
+
         $data = [
             'user' => $this->user,
-            'matched_user' => $this->matchedUser,
-            'chat_url' => config('app.frontend_url') . '/chat/' . $this->matchedUser->id,
+            'matchedUser' => $this->matchedUser,
+            'chatUrl' => config('app.frontend_url') . '/app/chat',
         ];
 
-        Mail::send('emails.mutual-match', $data, function ($message) {
+        Mail::send('emails.match.mutual-match', $data, function ($message) {
             $message->to($this->user->email, $this->user->full_name)
-                   ->subject("It's a Match! 🎉 - " . config('app.name'));
+                   ->subject("It's a Match! - " . config('app.name'));
         });
     }
 
