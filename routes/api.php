@@ -27,7 +27,9 @@ use App\Http\Controllers\Api\Admin\ReportController;
 use App\Http\Controllers\Api\Admin\ContentController;
 use App\Http\Controllers\Api\Admin\SettingsController as AdminSettingsController;
 use App\Http\Controllers\Api\Admin\CountryPricingController;
+use App\Http\Controllers\Api\Admin\SuccessStoryController as AdminSuccessStoryController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\SuccessStoryController;
 use App\Http\Controllers\Api\VideoCallController;
 use App\Models\User;
 use App\Http\Controllers\Api\EmailVerificationController;
@@ -86,6 +88,13 @@ Route::prefix('v1')->group(function () {
 
     // Browse live profiles (public - no auth required)
     Route::get('browse/live', [BrowseController::class, 'liveProfiles']);
+
+    // Success Stories (public - no auth required)
+    Route::prefix('success-stories')->group(function () {
+        Route::get('/', [SuccessStoryController::class, 'publicList']);
+        Route::get('featured', [SuccessStoryController::class, 'featured']);
+        Route::get('{successStory}', [SuccessStoryController::class, 'show']);
+    });
 });
 
 // Email verification routes
@@ -302,6 +311,16 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('resend', [EmailVerificationController::class, 'resend']);
         Route::get('check', [EmailVerificationController::class, 'check']);
     });
+
+    // Success Stories (authenticated - manage own stories)
+    Route::prefix('success-stories')->group(function () {
+        Route::get('my-stories', [SuccessStoryController::class, 'index']);
+        Route::post('/', [SuccessStoryController::class, 'store']);
+        Route::post('{successStory}/submit', [SuccessStoryController::class, 'submitForApproval']);
+        Route::put('{successStory}', [SuccessStoryController::class, 'update']);
+        Route::delete('{successStory}', [SuccessStoryController::class, 'destroy']);
+        Route::get('search-users', [SuccessStoryController::class, 'searchUsers']);
+    });
 });
 
 // Admin routes (role-based access)
@@ -370,6 +389,20 @@ Route::prefix('v1/admin')->middleware(['auth:sanctum', 'admin'])->group(function
         Route::delete('countries/{countryCode}', [CountryPricingController::class, 'destroy']);
         Route::post('bulk-update', [CountryPricingController::class, 'bulkUpdate']);
         Route::post('adjust-prices', [CountryPricingController::class, 'adjustPrices']);
+    });
+
+    // Success Stories management
+    Route::prefix('success-stories')->group(function () {
+        Route::get('/', [AdminSuccessStoryController::class, 'index']);
+        Route::get('pending', [AdminSuccessStoryController::class, 'pending']);
+        Route::get('{successStory}', [AdminSuccessStoryController::class, 'show']);
+        Route::post('{successStory}/approve', [AdminSuccessStoryController::class, 'approve']);
+        Route::post('{successStory}/reject', [AdminSuccessStoryController::class, 'reject']);
+        Route::post('{successStory}/feature', [AdminSuccessStoryController::class, 'setFeatured']);
+        Route::delete('{successStory}/feature', [AdminSuccessStoryController::class, 'removeFeatured']);
+        Route::post('bulk-approve', [AdminSuccessStoryController::class, 'bulkApprove']);
+        Route::post('bulk-reject', [AdminSuccessStoryController::class, 'bulkReject']);
+        Route::delete('{successStory}', [AdminSuccessStoryController::class, 'delete']);
     });
 });
 

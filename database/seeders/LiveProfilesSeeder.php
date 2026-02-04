@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Models\UserPhoto;
 use App\Models\UserProfile;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -106,7 +107,28 @@ class LiveProfilesSeeder extends Seeder
             // Check if user already exists
             $existingUser = User::where('email', $userData['email'])->first();
             if ($existingUser) {
-                $this->command->info("User {$userData['email']} already exists, skipping...");
+                // Add photo if missing
+                if (!$existingUser->photos()->where('is_profile_picture', true)->exists()) {
+                    $bgColor = $userData['gender'] === 'female' ? 'ec4899' : '8b5cf6';
+                    $photoUrl = "https://ui-avatars.com/api/?name=" . urlencode($userData['first_name'] . '+' . $userData['last_name']) .
+                               "&background={$bgColor}&color=fff&size=400&bold=true&format=png";
+
+                    UserPhoto::create([
+                        'user_id' => $existingUser->id,
+                        'original_filename' => strtolower($userData['first_name']) . '_profile.png',
+                        'file_path' => $photoUrl,
+                        'thumbnail_path' => str_replace('size=400', 'size=100', $photoUrl),
+                        'medium_path' => str_replace('size=400', 'size=200', $photoUrl),
+                        'is_profile_picture' => true,
+                        'status' => 'approved',
+                        'sort_order' => 1,
+                        'mime_type' => 'image/png',
+                        'file_size' => 10240, // Placeholder size
+                    ]);
+                    $this->command->info("Added profile photo for existing user: {$userData['email']}");
+                } else {
+                    $this->command->info("User {$userData['email']} already exists with photo, skipping...");
+                }
                 continue;
             }
 
@@ -131,7 +153,24 @@ class LiveProfilesSeeder extends Seeder
                 $userData['profile']
             ));
 
-            $this->command->info("Created user: {$userData['first_name']} {$userData['last_name']}");
+            // Create profile photo using ui-avatars.com placeholder
+            $bgColor = $userData['gender'] === 'female' ? 'ec4899' : '8b5cf6'; // Pink for female, Purple for male
+            $photoUrl = "https://ui-avatars.com/api/?name=" . urlencode($userData['first_name'] . '+' . $userData['last_name']) .
+                       "&background={$bgColor}&color=fff&size=400&bold=true&format=png";
+
+            UserPhoto::create([
+                'user_id' => $user->id,
+                'original_filename' => strtolower($userData['first_name']) . '_profile.png',
+                'file_path' => $photoUrl,
+                'thumbnail_path' => str_replace('size=400', 'size=100', $photoUrl),
+                'medium_path' => str_replace('size=400', 'size=200', $photoUrl),
+                'is_profile_picture' => true,
+                'status' => 'approved',
+                'sort_order' => 1,
+                'mime_type' => 'image/png',
+            ]);
+
+            $this->command->info("Created user: {$userData['first_name']} {$userData['last_name']} (with profile photo)");
         }
 
         $this->command->info('LiveProfilesSeeder completed!');

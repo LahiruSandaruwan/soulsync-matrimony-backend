@@ -58,5 +58,11 @@ class DatabaseSeeder extends Seeder
         $this->command->info('Test users created successfully!');
         $this->command->info('Admin: admin@soulsync.com / password123');
         $this->command->info('User: test@soulsync.com / password123');
+
+        // Run additional seeders for demo data
+        $this->call([
+            LiveProfilesSeeder::class,
+            SuccessStoriesSeeder::class,
+        ]);
     }
 }
