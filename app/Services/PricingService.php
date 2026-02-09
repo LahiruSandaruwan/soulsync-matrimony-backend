@@ -121,25 +121,26 @@ class PricingService
             ],
         ];
 
+        // Add 'type' field to each plan and convert to indexed array
+        $plansArray = [];
+        foreach ($plans as $type => $plan) {
+            $plan['type'] = $type;
+            $plansArray[] = $plan;
+        }
+
         return [
-            'country' => [
-                'code' => $config->country_code,
-                'name' => $config->country_name,
-            ],
-            'currency' => [
-                'code' => $config->currency_code,
-                'symbol' => $config->currency_symbol,
-            ],
-            'plans' => $plans,
+            'country_code' => $config->country_code,
+            'country_name' => $config->country_name,
+            'currency_code' => $config->currency_code,
+            'currency_symbol' => $config->currency_symbol,
+            'plans' => $plansArray,
             'discounts' => [
                 'quarterly' => (float) $config->quarterly_discount,
                 'yearly' => (float) $config->yearly_discount,
             ],
-            'tax' => [
-                'rate' => (float) $config->tax_rate,
-                'name' => $config->tax_name,
-                'inclusive' => $config->tax_inclusive,
-            ],
+            'tax_rate' => (float) $config->tax_rate,
+            'tax_name' => $config->tax_name,
+            'tax_inclusive' => $config->tax_inclusive,
             'payment_methods' => $config->payment_methods ?? ['stripe', 'paypal'],
         ];
     }
@@ -320,47 +321,52 @@ class PricingService
             }
         }
 
+        // Build plans as indexed array with type field
+        $plans = [
+            [
+                'id' => 'free',
+                'type' => 'free',
+                'name' => 'Free',
+                'prices' => ['monthly' => 0, 'quarterly' => 0, 'yearly' => 0],
+                'features' => ['View limited profiles', 'Basic search'],
+                'popular' => false,
+            ],
+            [
+                'id' => 'basic',
+                'type' => 'basic',
+                'name' => 'Basic',
+                'prices' => $basePrices['basic'],
+                'features' => ['Unlimited views', 'Advanced search', 'Chat'],
+                'popular' => false,
+            ],
+            [
+                'id' => 'premium',
+                'type' => 'premium',
+                'name' => 'Premium',
+                'prices' => $basePrices['premium'],
+                'features' => ['All Basic features', 'Video calls', 'Priority'],
+                'popular' => true,
+            ],
+            [
+                'id' => 'platinum',
+                'type' => 'platinum',
+                'name' => 'Platinum',
+                'prices' => $basePrices['platinum'],
+                'features' => ['All Premium features', 'VIP support', 'Matchmaker'],
+                'popular' => false,
+            ],
+        ];
+
         return [
-            'country' => [
-                'code' => $countryCode,
-                'name' => $countryCode, // Would need country name lookup
-            ],
-            'currency' => [
-                'code' => $currency,
-                'symbol' => $symbol,
-            ],
-            'plans' => [
-                'free' => [
-                    'id' => 'free',
-                    'name' => 'Free',
-                    'prices' => ['monthly' => 0, 'quarterly' => 0, 'yearly' => 0],
-                    'features' => ['View limited profiles', 'Basic search'],
-                    'popular' => false,
-                ],
-                'basic' => [
-                    'id' => 'basic',
-                    'name' => 'Basic',
-                    'prices' => $basePrices['basic'],
-                    'features' => ['Unlimited views', 'Advanced search', 'Chat'],
-                    'popular' => false,
-                ],
-                'premium' => [
-                    'id' => 'premium',
-                    'name' => 'Premium',
-                    'prices' => $basePrices['premium'],
-                    'features' => ['All Basic features', 'Video calls', 'Priority'],
-                    'popular' => true,
-                ],
-                'platinum' => [
-                    'id' => 'platinum',
-                    'name' => 'Platinum',
-                    'prices' => $basePrices['platinum'],
-                    'features' => ['All Premium features', 'VIP support', 'Matchmaker'],
-                    'popular' => false,
-                ],
-            ],
+            'country_code' => $countryCode,
+            'country_name' => $countryCode, // Would need country name lookup
+            'currency_code' => $currency,
+            'currency_symbol' => $symbol,
+            'plans' => $plans,
             'discounts' => ['quarterly' => 10, 'yearly' => 20],
-            'tax' => ['rate' => 0, 'name' => null, 'inclusive' => false],
+            'tax_rate' => 0,
+            'tax_name' => null,
+            'tax_inclusive' => false,
             'payment_methods' => ['stripe', 'paypal'],
         ];
     }

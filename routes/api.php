@@ -231,15 +231,12 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('{videoCall}/end', [VideoCallController::class, 'end']);
     });
     
-    // Subscriptions and payments
+    // Subscriptions and payments (protected routes - plans/countries/detect-location are public in v1/subscription)
     Route::prefix('subscription')->group(function () {
         Route::get('/', [SubscriptionController::class, 'current']);
-        Route::get('plans', [SubscriptionController::class, 'plans']);
+        // Note: plans, countries, detect-location, calculate-price are defined as public routes above
         Route::get('status', [SubscriptionController::class, 'current']);
         Route::get('features', [SubscriptionController::class, 'features']);
-        Route::get('countries', [SubscriptionController::class, 'supportedCountries']);
-        Route::get('detect-location', [SubscriptionController::class, 'detectLocation']);
-        Route::post('calculate-price', [SubscriptionController::class, 'calculatePrice']);
         Route::post('subscribe', [SubscriptionController::class, 'subscribe']);
         Route::post('cancel', [SubscriptionController::class, 'cancel']);
         Route::post('reactivate', [SubscriptionController::class, 'reactivate']);

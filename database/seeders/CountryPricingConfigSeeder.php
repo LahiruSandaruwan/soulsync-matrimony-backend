@@ -40,14 +40,14 @@ class CountryPricingConfigSeeder extends Seeder
                 'currency_code' => 'LKR',
                 'currency_symbol' => 'Rs.',
                 'basic_monthly' => 1500.00,
-                'basic_quarterly' => 4050.00,
-                'basic_yearly' => 14400.00,
-                'premium_monthly' => 3000.00,
-                'premium_quarterly' => 8100.00,
-                'premium_yearly' => 28800.00,
-                'platinum_monthly' => 6000.00,
-                'platinum_quarterly' => 16200.00,
-                'platinum_yearly' => 57600.00,
+                'basic_quarterly' => 4050.00,    // 1500 * 3 * 0.9 = 4050
+                'basic_yearly' => 14400.00,      // 1500 * 12 * 0.8 = 14400
+                'premium_monthly' => 2500.00,    // Reduced from 3000
+                'premium_quarterly' => 6750.00,  // 2500 * 3 * 0.9 = 6750
+                'premium_yearly' => 24000.00,    // 2500 * 12 * 0.8 = 24000
+                'platinum_monthly' => 5000.00,   // Reduced from 6000
+                'platinum_quarterly' => 13500.00, // 5000 * 3 * 0.9 = 13500
+                'platinum_yearly' => 48000.00,   // 5000 * 12 * 0.8 = 48000
                 'payment_methods' => ['payhere', 'webxpay', 'stripe'],
                 'display_order' => 2,
             ],

@@ -196,21 +196,44 @@ class GeolocationService
     }
 
     /**
-     * Get default location (US)
+     * Get default location (configurable via env for local development)
      *
      * @return array
      */
     private function getDefaultLocation(): array
     {
+        // Allow override for local development via .env
+        $defaultCountry = env('DEFAULT_COUNTRY', 'US');
+        $currency = $this->getCurrencyForCountry($defaultCountry);
+        $symbol = $this->getCurrencySymbol($currency);
+
+        $countryNames = [
+            'US' => 'United States',
+            'LK' => 'Sri Lanka',
+            'IN' => 'India',
+            'GB' => 'United Kingdom',
+            'AU' => 'Australia',
+            'CA' => 'Canada',
+        ];
+
+        $timezones = [
+            'US' => 'America/New_York',
+            'LK' => 'Asia/Colombo',
+            'IN' => 'Asia/Kolkata',
+            'GB' => 'Europe/London',
+            'AU' => 'Australia/Sydney',
+            'CA' => 'America/Toronto',
+        ];
+
         return [
             'success' => true,
-            'country_code' => 'US',
-            'country_name' => 'United States',
+            'country_code' => $defaultCountry,
+            'country_name' => $countryNames[$defaultCountry] ?? $defaultCountry,
             'region' => null,
             'city' => null,
-            'timezone' => 'America/New_York',
-            'currency' => 'USD',
-            'currency_symbol' => '$',
+            'timezone' => $timezones[$defaultCountry] ?? 'UTC',
+            'currency' => $currency,
+            'currency_symbol' => $symbol,
             'ip' => request()->ip(),
             'source' => 'default',
         ];

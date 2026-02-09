@@ -121,8 +121,10 @@ class SubscriptionController extends Controller
             ],
         ];
 
-        foreach ($pricingData['plans'] as $planId => &$plan) {
-            $plan['limits'] = $limits[$planId] ?? [];
+        // Add limits to each plan (plans is now an indexed array with 'type' field)
+        foreach ($pricingData['plans'] as &$plan) {
+            $planType = $plan['type'] ?? $plan['id'] ?? 'free';
+            $plan['limits'] = $limits[$planType] ?? [];
         }
 
         return response()->json([

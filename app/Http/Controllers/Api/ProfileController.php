@@ -74,70 +74,70 @@ class ProfileController extends Controller
     {
         $validator = Validator::make($request->all(), [
             // Basic user information
-            'first_name' => 'sometimes|string|max:50',
-            'last_name' => 'sometimes|string|max:50',
-            
+            'first_name' => 'nullable|string|max:50',
+            'last_name' => 'nullable|string|max:50',
+
             // Physical attributes
-            'height_cm' => 'sometimes|integer|min:100|max:250',
-            'weight_kg' => 'sometimes|numeric|min:30|max:200',
-            'body_type' => 'sometimes|in:slim,average,athletic,heavy',
-            'complexion' => 'sometimes|in:very_fair,fair,wheatish,dark,very_dark',
-            'blood_group' => 'sometimes|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
-            'physically_challenged' => 'sometimes|boolean',
-            'physical_challenge_details' => 'sometimes|string|max:500',
-            
+            'height_cm' => 'nullable|integer|min:100|max:250',
+            'weight_kg' => 'nullable|numeric|min:30|max:200',
+            'body_type' => 'nullable|in:slim,average,athletic,heavy',
+            'complexion' => 'nullable|in:very_fair,fair,wheatish,brown,dark,very_dark',
+            'blood_group' => 'nullable|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
+            'physically_challenged' => 'nullable|boolean',
+            'physical_challenge_details' => 'nullable|string|max:500',
+
             // Location
-            'current_city' => 'sometimes|string|max:100',
-            'current_state' => 'sometimes|string|max:100',
-            'current_country' => 'sometimes|string|max:100',
-            'hometown_city' => 'sometimes|string|max:100',
-            'hometown_state' => 'sometimes|string|max:100',
-            'hometown_country' => 'sometimes|string|max:100',
-            
+            'current_city' => 'nullable|string|max:100',
+            'current_state' => 'nullable|string|max:100',
+            'current_country' => 'nullable|string|max:100',
+            'hometown_city' => 'nullable|string|max:100',
+            'hometown_state' => 'nullable|string|max:100',
+            'hometown_country' => 'nullable|string|max:100',
+
             // Education & Career
-            'education_level' => 'sometimes|string|max:100',
-            'education_field' => 'sometimes|string|max:100',
-            'college_university' => 'sometimes|string|max:200',
-            'occupation' => 'sometimes|string|max:100',
-            'company' => 'sometimes|string|max:200',
-            'job_title' => 'sometimes|string|max:100',
-            'annual_income_usd' => 'sometimes|numeric|min:0|max:10000000',
-            'working_status' => 'sometimes|in:employed,self_employed,business,not_working,student',
-            
+            'education_level' => 'nullable|string|max:100',
+            'education_field' => 'nullable|string|max:100',
+            'college_university' => 'nullable|string|max:200',
+            'occupation' => 'nullable|string|max:100',
+            'company' => 'nullable|string|max:200',
+            'job_title' => 'nullable|string|max:100',
+            'annual_income_usd' => 'nullable|numeric|min:0|max:10000000',
+            'working_status' => 'nullable|in:employed,self_employed,business,not_working,student',
+
             // Cultural & Religious
-            'religion' => 'sometimes|string|max:50',
-            'caste' => 'sometimes|string|max:50',
-            'sub_caste' => 'sometimes|string|max:50',
-            'mother_tongue' => 'sometimes|string|max:50',
-            'languages_known' => 'sometimes|array',
-            'religiousness' => 'sometimes|in:very_religious,religious,somewhat_religious,not_religious',
-            
+            'religion' => 'nullable|string|max:50',
+            'caste' => 'nullable|string|max:50',
+            'sub_caste' => 'nullable|string|max:50',
+            'mother_tongue' => 'nullable|string|max:50',
+            'languages_known' => 'nullable|array',
+            'religiousness' => 'nullable|in:very_religious,religious,somewhat_religious,not_religious',
+
             // Family
-            'family_type' => 'sometimes|in:nuclear,joint',
-            'family_status' => 'sometimes|in:middle_class,upper_middle_class,rich,affluent',
-            'father_occupation' => 'sometimes|string|max:100',
-            'mother_occupation' => 'sometimes|string|max:100',
-            'brothers_count' => 'sometimes|integer|min:0|max:20',
-            'sisters_count' => 'sometimes|integer|min:0|max:20',
-            'brothers_married' => 'sometimes|integer|min:0|max:20',
-            'sisters_married' => 'sometimes|integer|min:0|max:20',
-            'family_details' => 'sometimes|string|max:1000',
-            
+            'family_type' => 'nullable|in:nuclear,joint',
+            'family_status' => 'nullable|in:middle_class,upper_middle_class,rich,affluent',
+            'father_occupation' => 'nullable|string|max:100',
+            'mother_occupation' => 'nullable|string|max:100',
+            'brothers_count' => 'nullable|integer|min:0|max:20',
+            'sisters_count' => 'nullable|integer|min:0|max:20',
+            'brothers_married' => 'nullable|integer|min:0|max:20',
+            'sisters_married' => 'nullable|integer|min:0|max:20',
+            'family_details' => 'nullable|string|max:1000',
+
             // Lifestyle
-            'diet' => 'sometimes|in:vegetarian,non_vegetarian,vegan,jain,occasionally_non_veg',
-            'smoking' => 'sometimes|in:never,occasionally,regularly',
-            'drinking' => 'sometimes|in:never,occasionally,socially,regularly',
-            'hobbies' => 'sometimes|array',
-            'about_me' => 'sometimes|string|max:1000',
-            'looking_for' => 'sometimes|string|max:1000',
-            
+            'diet' => 'nullable|in:vegetarian,non_vegetarian,vegan,jain,occasionally_non_veg',
+            'smoking' => 'nullable|in:never,occasionally,regularly',
+            'drinking' => 'nullable|in:never,occasionally,socially,regularly',
+            'hobbies' => 'nullable|array',
+            'about_me' => 'nullable|string|max:1000',
+            'looking_for' => 'nullable|string|max:1000',
+
             // Matrimonial specific
-            'marital_status' => 'sometimes|in:never_married,divorced,widowed,separated',
-            'have_children' => 'sometimes|boolean',
-            'children_count' => 'sometimes|integer|min:0|max:10',
-            'children_living_status' => 'sometimes|in:with_me,with_ex,independent',
-            'willing_to_relocate' => 'sometimes|boolean',
-            'preferred_locations' => 'sometimes|array',
+            'marital_status' => 'nullable|in:never_married,divorced,widowed,separated',
+            'have_children' => 'nullable|boolean',
+            'children_count' => 'nullable|integer|min:0|max:10',
+            'children_living_status' => 'nullable|in:with_me,with_ex,independent',
+            'willing_to_relocate' => 'nullable|boolean',
+            'preferred_locations' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -157,15 +157,23 @@ class ProfileController extends Controller
             // Separate user data from profile data
             $userData = array_intersect_key($data, array_flip(['first_name', 'last_name']));
             $profileData = array_diff_key($data, array_flip(['first_name', 'last_name']));
-            
+
+            // Sanitize integer fields - convert empty strings/null to 0 (database has NOT NULL with default 0)
+            $integerFields = ['children_count', 'brothers_count', 'sisters_count', 'brothers_married', 'sisters_married'];
+            foreach ($integerFields as $field) {
+                if (array_key_exists($field, $profileData) && ($profileData[$field] === '' || $profileData[$field] === null)) {
+                    $profileData[$field] = 0;
+                }
+            }
+
             // Update user basic information if provided
             if (!empty($userData)) {
                 $user->update($userData);
             }
-            
+
             // Get or create profile
             $profile = $user->profile ?? $user->profile()->create([]);
-            
+
             // Update profile
             $profile->update($profileData);
             
@@ -731,7 +739,7 @@ class ProfileController extends Controller
             'country_code' => $user->country_code,
             'is_premium' => $user->is_premium,
             'last_active' => $user->hide_last_seen ? null : $user->last_active_at?->diffForHumans(),
-            'profile_completion' => $user->profile_completion_percentage ?? 0,
+            'completion_percentage' => $user->profile_completion_percentage ?? 0,
             'verification' => [
                 'profile_verified' => $profile?->profile_verified ?? false,
                 'photo_verified' => $user->photo_verified,
